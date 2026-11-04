@@ -20,9 +20,9 @@ export function StoreMarkers({
     >
       <Pin
         scale={store.id === selectedId ? 1.3 : 1}
-        background={store.id === selectedId ? '#164532' : '#ffffff'}
-        borderColor="#216047"
-        glyphColor={store.id === selectedId ? '#ffffff' : '#216047'}
+        background={store.id === selectedId ? '#0f172b' : '#ffffff'}
+        borderColor="#0f172b"
+        glyphColor={store.id === selectedId ? '#ffffff' : '#0f172b'}
       />
     </AdvancedMarker>
   ))

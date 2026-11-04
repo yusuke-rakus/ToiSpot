@@ -2,10 +2,21 @@ import type { ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowUpRight,
-  LoaderCircle,
   RefreshCw,
   Store as StoreIcon,
 } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Item,
+  ItemContent,
+  ItemTitle,
+  ItemDescription,
+  ItemActions,
+} from '@/components/ui/item'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import {
   availabilityLabels,
@@ -70,7 +81,7 @@ export function StorePanel({
           aria-label="店舗情報を更新"
         >
           {query.isFetching ? (
-            <LoaderCircle
+            <Spinner
               className="animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
@@ -91,7 +102,7 @@ export function StorePanel({
           role="status"
           className="flex items-center gap-2 py-5 text-sm text-muted-foreground"
         >
-          <LoaderCircle
+          <Spinner
             className="size-4 animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />
@@ -99,13 +110,12 @@ export function StorePanel({
         </p>
       )}
       {query.isError && (
-        <p
-          role="alert"
-          className="mb-4 border-l-2 border-destructive pl-3 text-sm leading-6"
-        >
-          店舗情報を読み込めませんでした。更新してください。
-          {result && '表示中の情報は前回取得した内容です。'}
-        </p>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>
+            店舗情報を読み込めませんでした。更新してください。
+            {result && '表示中の情報は前回取得した内容です。'}
+          </AlertDescription>
+        </Alert>
       )}
       {result && result.invalidCount > 0 && (
         <p
@@ -126,20 +136,26 @@ export function StorePanel({
 
       {placesStatus === 'loading' && <Notice>周辺のコンビニを検索中</Notice>}
       {placesStatus === 'error' && (
-        <div role="alert" className="mb-4 space-y-2 text-sm leading-6">
-          <p>コンビニを検索できませんでした。</p>
-          <Button variant="outline" onClick={onRetryPlaces}>
-            コンビニ検索を再試行
-          </Button>
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription className="space-y-2">
+            <p>コンビニを検索できませんでした。</p>
+            <Button variant="outline" onClick={onRetryPlaces}>
+              コンビニ検索を再試行
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
       {placesStatus === 'success' && entries.every((entry) => !entry.place) && (
-        <Notice>周辺にコンビニが見つかりません。</Notice>
+        <Empty role="status" className="px-0">
+          <EmptyDescription>周辺にコンビニが見つかりません。</EmptyDescription>
+        </Empty>
       )}
       {registrationError && (
-        <p role="alert" className="mb-4 text-sm leading-6">
-          登録情報を確認できません。更新してください。
-        </p>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>
+            登録情報を確認できません。更新してください。
+          </AlertDescription>
+        </Alert>
       )}
 
       {pointContent ? (
@@ -166,53 +182,61 @@ export function StorePanel({
             const store = entry.store
             return (
               <li key={entry.key}>
-                <button
-                  type="button"
-                  className="group w-full px-5 py-4 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
-                  onClick={() =>
-                    store
-                      ? onSelectStore(store.id)
-                      : onSelectPlace(entry.place!.id)
-                  }
-                  aria-label={`${entry.name}の詳細を見る`}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {store ? store.chainName : 'Google Maps の店舗情報'}
-                    </span>
-                    {store ? (
-                      <AvailabilityBadge store={store} />
-                    ) : (
-                      <span className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">
-                        {registrationLabels[entry.registration]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-sm leading-6 font-medium">
-                      {entry.name}
-                    </h3>
-                    <ArrowUpRight
-                      className="mt-1 size-4 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  </div>
-                </button>
+                <Item asChild className="rounded-none border-0 p-0">
+                  <button
+                    type="button"
+                    className="group w-full px-5 py-4 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
+                    onClick={() =>
+                      store
+                        ? onSelectStore(store.id)
+                        : onSelectPlace(entry.place!.id)
+                    }
+                    aria-label={`${entry.name}の詳細を見る`}
+                  >
+                    <ItemContent>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <ItemDescription className="text-[11px]">
+                          {store ? store.chainName : 'Google Maps の店舗情報'}
+                        </ItemDescription>
+                        {store ? (
+                          <AvailabilityBadge store={store} />
+                        ) : (
+                          <Badge variant="secondary" className="text-[11px]">
+                            {registrationLabels[entry.registration]}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <ItemTitle className="text-sm leading-6">
+                          <h3>{entry.name}</h3>
+                        </ItemTitle>
+                        <ItemActions>
+                          <ArrowUpRight
+                            className="mt-1 size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </ItemActions>
+                      </div>
+                    </ItemContent>
+                  </button>
+                </Item>
               </li>
             )
           })}
         </ul>
       ) : (
         result && (
-          <Notice>
-            {result.invalidCount
-              ? '表示できる店舗情報がありません。'
-              : result.truncated
-                ? '取得した候補に表示できる店舗がありません。'
-                : areaLabel
-                  ? '半径3km以内に登録された店舗はありません。'
-                  : '登録された店舗はありません。'}
-          </Notice>
+          <Empty role="status" className="px-0">
+            <EmptyDescription>
+              {result.invalidCount
+                ? '表示できる店舗情報がありません。'
+                : result.truncated
+                  ? '取得した候補に表示できる店舗がありません。'
+                  : areaLabel
+                    ? '半径3km以内に登録された店舗はありません。'
+                    : '登録された店舗はありません。'}
+            </EmptyDescription>
+          </Empty>
         )
       )}
     </>
@@ -244,11 +268,12 @@ export function AvailabilityBadge({ store }: { store: Store }) {
         ? 'bg-amber-50 text-amber-900 dark:bg-amber-400/15 dark:text-amber-200'
         : 'bg-muted text-muted-foreground'
   return (
-    <span
-      className={`inline-flex shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${style}`}
+    <Badge
+      variant="secondary"
+      className={`shrink-0 px-2 py-1 text-[11px] ${style}`}
     >
       {availabilityLabels[store.availability]}
-    </span>
+    </Badge>
   )
 }
 
@@ -279,7 +304,8 @@ function StoreDetails({ store }: { store: Store }) {
       <p className="mt-2 text-xs leading-6 text-muted-foreground">
         {store.address}
       </p>
-      <div className="mt-6 border-t pt-5">
+      <Separator className="mt-6" />
+      <div className="pt-5">
         <h4 className="mb-3 text-xs font-medium text-muted-foreground">
           貸出状況
         </h4>
@@ -288,7 +314,8 @@ function StoreDetails({ store }: { store: Store }) {
           <p className="mt-3 text-sm leading-7">{store.conditions}</p>
         )}
       </div>
-      <div className="mt-5 border-t pt-5">
+      <Separator className="mt-5" />
+      <div className="pt-5">
         <h4 className="text-sm font-medium">設備の内訳</h4>
         <p className="mt-2 text-xs text-muted-foreground">
           {layoutLabels[store.genderLayout]}
@@ -305,7 +332,8 @@ function StoreDetails({ store }: { store: Store }) {
           ))}
         </dl>
       </div>
-      <div className="mt-4 border-t pt-5">
+      <Separator className="mt-4" />
+      <div className="pt-5">
         <h4 className="text-xs font-medium text-muted-foreground">備考</h4>
         <p className="mt-2 text-sm leading-7">{store.notes || '記載なし'}</p>
       </div>

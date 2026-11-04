@@ -1,36 +1,26 @@
-import { Toast } from 'radix-ui'
-import { useState } from 'react'
+import { useEffect } from 'react'
+import { toast } from 'sonner'
 import { useAdmin } from '@/features/auth/admin-provider'
+import { Toaster as Sonner } from './sonner'
 
 export function Toaster() {
   const { message } = useAdmin()
-  return message ? <ErrorToast key={message} message={message} /> : null
-}
-
-function ErrorToast({ message }: { message: string }) {
-  const [open, setOpen] = useState(true)
+  useEffect(() => {
+    if (!message) return
+    const id = toast.error('認証エラー', {
+      description: message,
+      duration: 6000,
+    })
+    return () => {
+      toast.dismiss(id)
+    }
+  }, [message])
   return (
-    <Toast.Provider swipeDirection="right">
-      <Toast.Root
-        open={open}
-        onOpenChange={setOpen}
-        duration={6000}
-        className="rounded-xl border border-destructive/30 bg-background p-4 text-foreground shadow-lg"
-      >
-        <Toast.Title className="font-semibold text-destructive">
-          認証エラー
-        </Toast.Title>
-        <Toast.Description className="mt-2 text-sm leading-6">
-          {message}
-        </Toast.Description>
-        <Toast.Close
-          aria-label="通知を閉じる"
-          className="mt-3 text-sm underline"
-        >
-          閉じる
-        </Toast.Close>
-      </Toast.Root>
-      <Toast.Viewport className="fixed right-4 bottom-4 z-[100] w-[calc(100%-2rem)] max-w-sm outline-none" />
-    </Toast.Provider>
+    <Sonner
+      position="bottom-right"
+      closeButton
+      containerAriaLabel="通知"
+      toastOptions={{ closeButtonAriaLabel: '通知を閉じる' }}
+    />
   )
 }

@@ -2,10 +2,27 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { LoaderCircle, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import {
+  Field,
+  FieldLabel,
+  FieldDescription,
+  FieldError,
+} from '@/components/ui/field'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -15,6 +32,8 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DialogHeader,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { useAdmin } from '@/features/auth/admin-provider'
 import { errorCode } from '@/features/auth/auth-repository'
@@ -57,6 +76,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
   const [message, setMessage] = useState<string | null>(null)
   const [discard, setDiscard] = useState(false)
   const submitting = useRef(false)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
   const mutation = useMutation({
     mutationFn: (input: StoreFormData) =>
       saveLocalStore(
@@ -110,27 +130,18 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
     hint?: string,
   ) {
     return (
-      <div className="space-y-2">
-        <Label htmlFor={`store-${name}`}>{label}</Label>
+      <Field data-invalid={!!errors[name]}>
+        <FieldLabel htmlFor={`store-${name}`}>{label}</FieldLabel>
         {control}
         {hint && (
-          <p
-            id={`hint-${name}`}
-            className="text-xs leading-5 text-muted-foreground"
-          >
-            {hint}
-          </p>
+          <FieldDescription id={`hint-${name}`}>{hint}</FieldDescription>
         )}
         {errors[name] && (
-          <p
-            id={`error-${name}`}
-            className="text-xs text-destructive"
-            role="alert"
-          >
+          <FieldError id={`error-${name}`} role="alert">
             {errors[name]?.message}
-          </p>
+          </FieldError>
         )}
-      </div>
+      </Field>
     )
   }
   function attrs(name: keyof StoreFormValues) {
@@ -175,17 +186,18 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
         }}
       >
         <div className="flex shrink-0 items-start justify-between border-b px-5 py-4 sm:px-6">
-          <div>
+          <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
               {target.original ? '店舗を編集' : '店舗を登録'}
             </DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-5 text-muted-foreground">
               設備数の空欄は不明として扱います。
             </DialogDescription>
-          </div>
+          </DialogHeader>
           <Button
             variant="ghost"
             size="icon"
+            ref={closeButtonRef}
             aria-label="入力を閉じる"
             onClick={close}
             disabled={saving}
@@ -294,7 +306,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
                 />,
               )}
               <div className="space-y-3">
-                <div className="flex items-center gap-2">
+                <Field orientation="horizontal">
                   <Controller
                     name="confirmedUnknown"
                     control={form.control}
@@ -312,10 +324,10 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
                       />
                     )}
                   />
-                  <Label htmlFor="store-confirmedUnknown">
+                  <FieldLabel htmlFor="store-confirmedUnknown">
                     最終確認日は未確認
-                  </Label>
-                </div>
+                  </FieldLabel>
+                </Field>
                 {field(
                   'confirmedDate',
                   '最終確認日',
@@ -333,49 +345,55 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
           </ScrollArea>
           <div className="shrink-0 space-y-3 border-t px-5 py-4 sm:px-6">
             {!allowed && (
-              <p role="alert" className="text-sm text-destructive">
-                管理者権限が確認できないため保存できません。入力内容は保持しています。
-              </p>
+              <Alert variant="destructive">
+                <AlertDescription>
+                  管理者権限が確認できないため保存できません。入力内容は保持しています。
+                </AlertDescription>
+              </Alert>
             )}
             {message && (
-              <p role="alert" className="text-sm text-destructive">
-                {message}
-              </p>
+              <Alert variant="destructive">
+                <AlertDescription>{message}</AlertDescription>
+              </Alert>
             )}
-            {discard ? (
-              <div className="space-y-3" role="alert">
-                <p className="text-sm">未保存の入力を破棄しますか？</p>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDiscard(false)}
-                  >
-                    入力を続ける
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={onClose}>
-                    破棄して閉じる
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={close}
-                  disabled={saving}
-                >
-                  キャンセル
-                </Button>
-                <Button type="submit" disabled={saving || !allowed}>
-                  {saving && <LoaderCircle className="animate-spin" />}
-                  {saving ? '保存中' : '保存する'}
-                </Button>
-              </div>
-            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={close}
+                disabled={saving}
+              >
+                キャンセル
+              </Button>
+              <Button type="submit" disabled={saving || !allowed}>
+                {saving && <Spinner aria-hidden="true" />}
+                {saving ? '保存中' : '保存する'}
+              </Button>
+            </DialogFooter>
           </div>
         </form>
+        <AlertDialog open={discard} onOpenChange={setDiscard}>
+          <AlertDialogContent
+            onEscapeKeyDown={(event) => event.stopPropagation()}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              closeButtonRef.current?.focus()
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>未保存の入力を破棄しますか？</AlertDialogTitle>
+              <AlertDialogDescription>
+                変更した内容は保存されません。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>入力を続ける</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={onClose}>
+                破棄して閉じる
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   )

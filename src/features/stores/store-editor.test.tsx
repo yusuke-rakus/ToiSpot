@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { StoreEditor } from './store-editor'
@@ -140,4 +140,26 @@ it('権限エラーで再判定を行い、入力を保持する', async () => {
   expect(screen.getByLabelText('店名')).toHaveValue(
     'サンプルコンビニ 丸の内中央店',
   )
+})
+
+it('破棄確認は安全な選択肢にフォーカスし、Escapeで編集へ戻れる', async () => {
+  const { user, onClose } = setup(true)
+  await user.type(screen.getByLabelText('店名'), '変更')
+  await user.click(screen.getByRole('button', { name: '入力を閉じる' }))
+  const dialog = screen.getByRole('alertdialog', {
+    name: '未保存の入力を破棄しますか？',
+  })
+  expect(
+    within(dialog).getByRole('button', { name: '入力を続ける' }),
+  ).toHaveFocus()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(onClose).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('店名')).toHaveValue(
+    'サンプルコンビニ 丸の内中央店変更',
+  )
+  expect(screen.getByRole('button', { name: '入力を閉じる' })).toHaveFocus()
+  await user.click(screen.getByRole('button', { name: 'キャンセル' }))
+  await user.click(screen.getByRole('button', { name: '破棄して閉じる' }))
+  expect(onClose).toHaveBeenCalledOnce()
 })

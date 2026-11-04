@@ -138,3 +138,51 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   ).toBe(true)
   expect(externalRequests).toEqual([])
 })
+
+test('店舗一覧をパネル内でスクロールし、詳細と一覧への切り替えで先頭に戻る', async ({
+  page,
+}, testInfo) => {
+  const stores = Array.from({ length: 15 }, (_, index) => ({
+    ...store,
+    id: `store-${index}`,
+    name: `スクロール確認店舗${index}`,
+  }))
+  await page.route('**/src/features/stores/use-stores.ts', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: `const data = ${JSON.stringify({ stores, invalidCount: 0, truncated: false })}; export function useStores() { return { data, enabled: true, isPending: false, isFetching: false, isError: false, refetch: async () => ({ data }) } }`,
+    }),
+  )
+  await page.goto('/')
+  const panel = page.getByRole('complementary', {
+    name: '店舗と選択した場所の情報',
+  })
+  const viewport = panel.locator('[data-slot="scroll-area-viewport"]')
+  await expect(panel.getByRole('list').locator('li')).toHaveCount(15)
+  expect(
+    await viewport.evaluate((el) => el.scrollHeight > el.clientHeight),
+  ).toBe(true)
+  await panel
+    .getByRole('button', { name: 'スクロール確認店舗14の詳細を見る' })
+    .scrollIntoViewIfNeeded()
+  expect(await viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  await panel
+    .getByRole('button', { name: 'スクロール確認店舗14の詳細を見る' })
+    .click()
+  await expect(
+    panel.getByRole('heading', { name: 'スクロール確認店舗14', exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0)
+  await panel.getByRole('button', { name: '一覧へ戻る' }).click()
+  await expect(panel.getByRole('list')).toBeVisible()
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+  await page.screenshot({
+    path: `output/playwright/scroll-${testInfo.project.name}.png`,
+    fullPage: true,
+  })
+})

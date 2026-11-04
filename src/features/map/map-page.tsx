@@ -8,14 +8,18 @@ import {
   useMap,
   type MapCameraProps,
 } from '@vis.gl/react-google-maps'
+import { CircleAlert, LocateFixed, MapPin, RotateCcw, X } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Alert, AlertDescription, AlertAction } from '@/components/ui/alert'
 import {
-  CircleAlert,
-  LoaderCircle,
-  LocateFixed,
-  MapPin,
-  RotateCcw,
-  X,
-} from 'lucide-react'
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useTheme } from '@/components/theme-provider'
@@ -59,7 +63,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     place?: ConveniencePlace
   } | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
-  const panelRef = useRef<HTMLElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<
     { kind: 'store'; id: string } | { kind: 'place'; id: string } | null
   >(null)
@@ -186,57 +190,66 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <aside
-          ref={panelRef}
           aria-label="店舗と選択した場所の情報"
-          className="order-2 max-h-[42svh] shrink-0 overflow-y-auto border-t bg-background p-5 sm:p-7 lg:order-1 lg:max-h-none lg:w-96 lg:border-t-0 lg:border-r"
+          className="order-2 max-h-[42svh] min-h-0 shrink-0 border-t bg-background lg:order-1 lg:max-h-none lg:w-96 lg:border-t-0 lg:border-r"
         >
-          {saveNotice && (
-            <p role="status" className="mb-4 text-sm leading-6 text-primary">
-              {saveNotice}
-            </p>
-          )}
-          <StorePanel
-            areaLabel={
-              area === 'location'
-                ? '現在地から半径3km・近い順'
-                : area === 'map'
-                  ? '検索した地点から半径3km・近い順'
-                  : '東京駅から半径3km・近い順'
-            }
-            query={storesQuery}
-            entries={entries}
-            placesStatus={places.status}
-            onSelectPlace={selectPlace}
-            onRefresh={() => void refreshRegistration()}
-            registrationFetching={links.isFetching}
-            registrationError={links.isError}
-            onRetryPlaces={() => void search(searchCenter)}
-            selectedStore={selectedStore}
-            onSelectStore={selectStore}
-            onBack={() => setSelection(null)}
-            onEdit={
-              admin.status === 'admin' && selectedStore
-                ? () =>
-                    setEditor({
-                      target: {
-                        id: selectedStore.id,
-                        googlePlaceId: selectedStore.googlePlaceId,
-                        original: selectedStore,
-                      },
-                    })
-                : undefined
-            }
-            pointContent={
-              selectedEntry && !selectedEntry.store ? (
-                <PlaceDetails
-                  key={selectedEntry.key}
-                  entry={selectedEntry}
-                  canManage={admin.status === 'admin'}
-                  onRegister={() => createStore(selectedEntry.place!)}
-                />
-              ) : null
-            }
-          />
+          <ScrollArea
+            viewportRef={panelRef}
+            className="h-full max-lg:[&_[data-slot=scroll-area-viewport]]:max-h-[42svh]"
+          >
+            <div className="p-5 sm:p-7">
+              {saveNotice && (
+                <p
+                  role="status"
+                  className="mb-4 text-sm leading-6 text-primary"
+                >
+                  {saveNotice}
+                </p>
+              )}
+              <StorePanel
+                areaLabel={
+                  area === 'location'
+                    ? '現在地から半径3km・近い順'
+                    : area === 'map'
+                      ? '検索した地点から半径3km・近い順'
+                      : '東京駅から半径3km・近い順'
+                }
+                query={storesQuery}
+                entries={entries}
+                placesStatus={places.status}
+                onSelectPlace={selectPlace}
+                onRefresh={() => void refreshRegistration()}
+                registrationFetching={links.isFetching}
+                registrationError={links.isError}
+                onRetryPlaces={() => void search(searchCenter)}
+                selectedStore={selectedStore}
+                onSelectStore={selectStore}
+                onBack={() => setSelection(null)}
+                onEdit={
+                  admin.status === 'admin' && selectedStore
+                    ? () =>
+                        setEditor({
+                          target: {
+                            id: selectedStore.id,
+                            googlePlaceId: selectedStore.googlePlaceId,
+                            original: selectedStore,
+                          },
+                        })
+                    : undefined
+                }
+                pointContent={
+                  selectedEntry && !selectedEntry.store ? (
+                    <PlaceDetails
+                      key={selectedEntry.key}
+                      entry={selectedEntry}
+                      canManage={admin.status === 'admin'}
+                      onRegister={() => createStore(selectedEntry.place!)}
+                    />
+                  ) : null
+                }
+              />
+            </div>
+          </ScrollArea>
         </aside>
 
         <section
@@ -476,7 +489,7 @@ function MapCanvas({
         />
         {location && (
           <AdvancedMarker position={location} title="現在地" anchorTop="-50%">
-            <span className="block size-5 rounded-full border-[3px] border-white bg-primary shadow-[0_0_0_7px_oklch(0.43_0.09_160/0.18)]" />
+            <span className="block size-5 rounded-full border-[3px] border-white bg-primary shadow-[0_0_0_7px_color-mix(in_oklch,var(--primary)_18%,transparent)]" />
           </AdvancedMarker>
         )}
       </GoogleMap>
@@ -494,7 +507,7 @@ function MapCanvas({
               role="status"
               className="flex items-center gap-3 text-sm text-muted-foreground"
             >
-              <LoaderCircle
+              <Spinner
                 className="size-4 animate-spin motion-reduce:animate-none"
                 aria-hidden="true"
               />
@@ -530,7 +543,7 @@ function MapCanvas({
           aria-busy={locating}
         >
           {locating ? (
-            <LoaderCircle
+            <Spinner
               className="animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
@@ -545,7 +558,7 @@ function MapCanvas({
         className="absolute bottom-7 left-3 flex max-w-[calc(100%-4rem)] flex-wrap gap-x-3 gap-y-1 rounded-lg border bg-background/95 px-3 py-2 text-[11px] shadow-sm"
       >
         <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-[#216047]" />
+          <span className="size-2.5 rounded-full bg-slate-900" />
           登録済み
         </span>
         <span className="flex items-center gap-1.5">
@@ -554,13 +567,10 @@ function MapCanvas({
         </span>
       </div>
       {locationError && (
-        <div
-          role="alert"
-          className="map-panel-enter absolute right-4 bottom-24 left-4 max-w-md rounded-xl border bg-background p-4 text-sm leading-6 shadow-sm sm:bottom-20"
-        >
-          <div className="flex items-start gap-2">
-            <CircleAlert className="mt-1 size-4 shrink-0" aria-hidden="true" />
-            <p>{locationError}</p>
+        <Alert className="map-panel-enter absolute right-4 bottom-24 left-4 w-auto max-w-md p-4 shadow-sm sm:bottom-20">
+          <CircleAlert aria-hidden="true" />
+          <AlertDescription>{locationError}</AlertDescription>
+          <AlertAction>
             <Button
               variant="ghost"
               size="icon"
@@ -570,8 +580,8 @@ function MapCanvas({
             >
               <X aria-hidden="true" />
             </Button>
-          </div>
-        </div>
+          </AlertAction>
+        </Alert>
       )}
     </>
   )
@@ -588,17 +598,21 @@ function MapNotice({
 }) {
   return (
     <div className="flex h-full min-h-[240px] items-center justify-center px-6 py-8">
-      <div className="max-w-sm text-center" role="alert">
-        <MapPin
-          className="mx-auto mb-5 size-7 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <h2 className="text-base font-semibold">{title}</h2>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          {description}
-        </p>
-        {action && <div className="mt-5">{action}</div>}
-      </div>
+      <Empty className="max-w-sm p-0" role="alert">
+        <EmptyHeader>
+          <EmptyMedia>
+            <MapPin
+              className="mx-auto mb-5 size-7 text-muted-foreground"
+              aria-hidden="true"
+            />
+          </EmptyMedia>
+          <EmptyTitle>
+            <h2>{title}</h2>
+          </EmptyTitle>
+          <EmptyDescription>{description}</EmptyDescription>
+        </EmptyHeader>
+        {action && <EmptyContent>{action}</EmptyContent>}
+      </Empty>
     </div>
   )
 }
