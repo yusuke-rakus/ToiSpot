@@ -1,0 +1,4 @@
+**
+!docker/
+!docker/firebase-emulator.Dockerfile
+!docker/start-emulators.sh

@@ -1,0 +1,53 @@
+# Dependencies and build output
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+.envrc
+.npmrc
+.netrc
+.aws/
+.ssh/
+secrets/
+credentials/
+*service-account*.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+application_default_credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Firebase state and local caches
+.firebase/
+.cache/
+.cache-firebase/
+.playwright-cli/
+.vite/
+.eslintcache
+.stylelintcache
+
+# Logs, test reports, and generated artifacts
+*.log
+playwright-report/
+blob-report/
+test-results/
+coverage/
+output/playwright/
+
+# Editor and operating system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

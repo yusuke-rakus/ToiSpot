@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function googleUser() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function admin() {
+      return googleUser()
+        && exists(/databases/$(database)/documents/_settings/admin)
+        && get(/databases/$(database)/documents/_settings/admin).data.email == request.auth.token.email.lower();
+    }
+    function count(value) {
+      return value == null || (value is int && value >= 0 && value <= 9007199254740991);
+    }
+    function validStore(d) {
+      return d.keys().hasAll(['name', 'chainName', 'address', 'location', 'geohash', 'availability', 'conditions', 'genderLayout', 'stalls', 'urinals', 'notes', 'lastConfirmedAt', 'createdAt', 'updatedAt', 'googlePlaceId'])
+        && d.keys().hasOnly(['name', 'chainName', 'address', 'location', 'geohash', 'availability', 'conditions', 'genderLayout', 'stalls', 'urinals', 'notes', 'lastConfirmedAt', 'createdAt', 'updatedAt', 'isSample', 'googlePlaceId'])
+        && d.googlePlaceId is string && d.googlePlaceId.matches('[A-Za-z0-9_-]{1,512}')
+        && d.get('isSample', false) == false
+        && d.name is string && d.name.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && d.chainName is string && d.chainName.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && d.address is string && d.address.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && d.location is map && d.location.keys().hasAll(['lat', 'lng']) && d.location.keys().hasOnly(['lat', 'lng'])
+        && d.location.lat is number && d.location.lat >= -90 && d.location.lat <= 90
+        && d.location.lng is number && d.location.lng >= -180 && d.location.lng <= 180
+        && d.geohash is string && d.geohash.matches('[0123456789bcdefghjkmnpqrstuvwxyz]{1,12}')
+        && d.availability in ['available', 'conditional', 'unavailable', 'temporarily_unavailable', 'unknown']
+        && d.conditions is string && (d.availability != 'conditional' || d.conditions.matches('[\\s\\S]*[^\\s][\\s\\S]*'))
+        && d.genderLayout in ['separate', 'shared', 'mixed', 'unknown']
+        && d.stalls is map && d.stalls.keys().hasAll(['male', 'female', 'shared']) && d.stalls.keys().hasOnly(['male', 'female', 'shared'])
+        && count(d.stalls.male) && count(d.stalls.female) && count(d.stalls.shared) && count(d.urinals)
+        && d.notes is string && (d.lastConfirmedAt == null || d.lastConfirmedAt is timestamp)
+        && d.createdAt is timestamp && d.updatedAt is timestamp && d.createdAt <= d.updatedAt
+        && d.get('isSample', false) is bool;
+    }
+    match /_settings/admin {
+      allow get: if googleUser() && resource.data.email == request.auth.token.email.lower();
+      allow list, write: if false;
+    }
+    match /stores/{storeId} {
+      function linked(d) {
+        return getAfter(/databases/$(database)/documents/placeLinks/$(d.googlePlaceId)).data.storeId == storeId;
+      }
+      allow read: if true;
+      allow create: if admin() && validStore(request.resource.data) && linked(request.resource.data)
+        && request.resource.data.get('isSample', false) == false
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if admin() && validStore(request.resource.data) && linked(request.resource.data)
+        && request.resource.data.googlePlaceId == resource.data.googlePlaceId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.get('isSample', false) == resource.data.get('isSample', false)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /placeLinks/{placeId} {
+      allow get: if true;
+      allow list, update, delete: if false;
+      allow create: if admin()
+        && placeId.matches('[A-Za-z0-9_-]{1,512}')
+        && request.resource.data.keys().hasOnly(['storeId'])
+        && request.resource.data.storeId is string
+        && request.resource.data.storeId.matches('[^/]+')
+        && getAfter(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.googlePlaceId == placeId;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

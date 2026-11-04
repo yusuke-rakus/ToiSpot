@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.cache/
+.firebase/
+pnpm-lock.yaml
+playwright-report/
+test-results/
+coverage/
+output/playwright/

@@ -1,0 +1,58 @@
+import { useQuery } from '@tanstack/react-query'
+import { doc, getDocFromServer, type Firestore } from 'firebase/firestore'
+import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
+import {
+  googlePlaceIdSchema,
+  storeDocumentSchema,
+  type Store,
+} from '../stores/store-schema'
+import type { ConveniencePlace } from './nearby-places'
+
+export type PlaceLinks = Record<string, Store | null>
+
+// geohashや一覧の上限と独立して、候補の登録状況をサーバーで確認する。
+export async function readPlaceLinks(
+  db: Firestore,
+  placeIds: string[],
+): Promise<PlaceLinks> {
+  const entries = await Promise.all(
+    [...new Set(placeIds)].map(async (id) => {
+      googlePlaceIdSchema.parse(id)
+      const link = await getDocFromServer(doc(db, 'placeLinks', id))
+      if (!link.exists()) return [id, null] as const
+      const storeId: unknown = link.data().storeId
+      if (typeof storeId !== 'string' || !storeId || storeId.includes('/'))
+        throw new Error('Invalid place link')
+      const snapshot = await getDocFromServer(doc(db, 'stores', storeId))
+      const result = storeDocumentSchema.safeParse(snapshot.data())
+      if (
+        !snapshot.exists() ||
+        !result.success ||
+        result.data.googlePlaceId !== id
+      )
+        throw new Error('Inconsistent place link')
+      return [id, { ...result.data, id: snapshot.id }] as const
+    }),
+  )
+  return Object.fromEntries(entries)
+}
+
+export async function fetchLocalPlaceLinks(placeIds: string[]) {
+  if (!usesFirebaseEmulators)
+    throw new Error('Place links require local emulator')
+  return readPlaceLinks(getFirebaseServices().db, placeIds)
+}
+
+export function usePlaceLinks(places: ConveniencePlace[], requestId = 0) {
+  const ids = places.map((place) => place.id).sort()
+  const query = useQuery({
+    // 同じ候補が返る再検索でも、以前の「未登録」を再利用せず照会する。
+    queryKey: ['placeLinks', 'emulator', 'demo-toilet-map', requestId, ids],
+    queryFn: () => fetchLocalPlaceLinks(ids),
+    enabled: usesFirebaseEmulators && ids.length > 0,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  })
+  return { ...query, enabled: usesFirebaseEmulators && ids.length > 0 }
+}

@@ -1,0 +1,31 @@
+services:
+  firebase:
+    build:
+      context: .
+      dockerfile: docker/firebase-emulator.Dockerfile
+      args:
+        FIREBASE_TOOLS_VERSION: 15.34.2
+    init: true
+    stop_grace_period: 60s
+    ports:
+      - '127.0.0.1:14001:14001'
+      - '127.0.0.1:19090:19090'
+      - '127.0.0.1:18081:18081'
+    volumes:
+      - ./docker/firebase.json:/workspace/firebase.json:ro
+      - ./firestore.rules:/workspace/firestore.rules:ro
+      - ./firestore.indexes.json:/workspace/firestore.indexes.json:ro
+      - firebase-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "Promise.all(['http://127.0.0.1:19090/', 'http://127.0.0.1:18081/', 'http://127.0.0.1:14001/'].map(url => fetch(url).then(r => { if (!r.ok) throw new Error(url) }))).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+
+volumes:
+  firebase-data:

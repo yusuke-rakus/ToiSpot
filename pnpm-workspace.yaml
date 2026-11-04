@@ -1,0 +1,44 @@
+engineStrict: true
+saveExact: true
+storeDir: .cache/pnpm-store
+cacheDir: .cache/pnpm
+overrides:
+  '@grpc/grpc-js': '1.14.7'
+allowBuilds:
+  '@firebase/util': true
+  fsevents: true
+  protobufjs: true
+  re2: true
+minimumReleaseAgeExclude:
+  - '@firebase/auth-compat@0.6.14'
+  - '@firebase/auth@1.13.9'
+  - '@firebase/crashlytics@0.1.0'
+  - '@firebase/firestore-compat@0.4.17'
+  - '@firebase/firestore@4.19.1'
+  - '@tailwindcss/vite@4.3.4'
+  - '@tanstack/react-query@5.105.3'
+  - '@vitejs/plugin-react@6.2.1'
+  - '@vitest/mocker@5.1.0'
+  - firebase@13.2.0
+  - vitest@5.1.0
+  # npmから移行済みの固定版だけを対象に、公開後の待機期間の例外を記録する。
+  - '@firebase/app@0.16.5'
+  - '@firebase/app-compat@0.5.21'
+  - '@tailwindcss/node@4.3.4'
+  - '@tailwindcss/oxide@4.3.4'
+  - '@tanstack/query-core@5.105.3'
+  - '@vitest/spy@5.1.0'
+  - 'cn@0.5.2'
+  - 'tailwindcss@4.3.4'
+  - '@tailwindcss/oxide-android-arm64@4.3.4'
+  - '@tailwindcss/oxide-darwin-arm64@4.3.4'
+  - '@tailwindcss/oxide-darwin-x64@4.3.4'
+  - '@tailwindcss/oxide-freebsd-x64@4.3.4'
+  - '@tailwindcss/oxide-linux-arm-gnueabihf@4.3.4'
+  - '@tailwindcss/oxide-linux-arm64-gnu@4.3.4'
+  - '@tailwindcss/oxide-linux-arm64-musl@4.3.4'
+  - '@tailwindcss/oxide-linux-x64-gnu@4.3.4'
+  - '@tailwindcss/oxide-linux-x64-musl@4.3.4'
+  - '@tailwindcss/oxide-wasm32-wasi@4.3.4'
+  - '@tailwindcss/oxide-win32-arm64-msvc@4.3.4'
+  - '@tailwindcss/oxide-win32-x64-msvc@4.3.4'
