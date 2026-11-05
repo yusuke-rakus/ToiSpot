@@ -121,3 +121,21 @@ Node.js 24.22.2・pnpm 12.16.1で `pnpm install --frozen-lockfile`、`pnpm check
 - PC・スマホのE2E10件が成功。OS連動、3択メニューのキーボード操作、再読込後の復元、別タブ同期、管理者ヘッダーの配置、地図の配色・中心・ズーム・選択維持、横はみ出しを確認する。Maps SDK・Places・Firestoreはスタブを使い、実Google APIには接続しない。
 - `output/playwright/`の`theme-{chromium,mobile}-{light,dark,admin}.png`と`places-{chromium,mobile}-{detail,dark}.png`を確認し、PC・スマホの明暗配色とメニュー表示を検証した。
 - この環境ではChromiumを`/tmp/toilet-map-playwright`へ用意し、`PLAYWRIGHT_BROWSERS_PATH=/tmp/toilet-map-playwright pnpm test:e2e`で実行。macOSのブラウザ起動に必要な権限で実行した。本番ビルドのチャンクサイズ警告は残る。Firestore Rulesとクラウド設定には変更を加えていない。
+
+## トイレ情報の簡素化の検証（2026-11-04）
+
+- 利用可の設備をアイコン・設備名・個数の2列で表示する。0とnullの混在、全設備0、全設備未確認、利用不可の設備非表示、空の備考・廃止した見出しや日付の非表示を単体テストで確認する。
+- フォームの貸出状況による表示切り替え、切り替え中の入力保持、非表示の設備エラーに妨げられない保存、利用不可でのnull化、保存失敗後の入力保持を確認する。
+- スキーマとRulesで貸出2状態、廃止項目の拒否、利用不可では設備数すべてnullという制約を検証する。実際のFirestoreドキュメントには画面用のidを含めない形式で、Placesの紐付け再取得も確認する。
+- `pnpm check`（単体・画面84件、文書・型・lint・本番ビルド）、`pnpm format:check`、`pnpm test:rules:docker`（26件）、`pnpm test:e2e`（PC・スマホ14件）を実行する。設備表示のE2Eでは明暗テーマの5パターンと横方向のはみ出しを確認し、外部通信を遮断する。
+- ローカルの`demo-toilet-map`にある7店舗から廃止3項目を一度だけ削除し、利用不可の設備数をnullへ揃えた。変更前のバックアップを一時ディレクトリへ保存し、7店舗・7件のPlace ID紐付け・備考・作成更新日時の保持を検証した。互換処理や移行スクリプトはアプリに常設しない。
+- 画面画像は`output/playwright/toilet-{equipment,unavailable}-{chromium,mobile}-{light,dark}.png`に保存する。ブラウザ起動にはmacOSの制限外での実行が必要だった。
+
+## 表示範囲に連動する自動検索の検証（2026-11-05）
+
+- `pnpm check`（単体・画面120件、文書・型・lint・本番ビルド）が成功。
+- 手動／自動・分割取得の切り替え、不正な環境変数、300msの待機、連続操作と同一範囲の重複抑止、ズーム13未満の停止・再開、店舗選択・テーマ変更による再検索の抑止を検証した。
+- 分割検索の100件・9要求上限、APIごとの20件・半径50km上限、世代をまたぐ同時2要求、中断後の追加要求抑止、範囲外・重複・不正データの除外、一部失敗・全失敗・前回表示の保持を確認した。
+- Firestoreの表示境界による絞り込み・3kmより遠い店舗の取得・既存100件上限・検索条件ごとのキャッシュ・停止中と失敗時の表示保持をSDKモックで検証した。更新途中の縮小で登録情報の追加照会を開始しないことも確認した。
+- PC・スマホのE2E18件が成功。Google Maps SDK・Places・Firestore読み取りをスタブ化し、外部HTTP通信を遮断して検証した。停止中の画面を`output/playwright/auto-search-{chromium,mobile}-paused.png`へ保存し、表示を確認した。
+- 実Google APIには接続していない。ブラウザ起動にはmacOSの制限外での実行が必要だった。本番ビルドの約1.31MBのJSチャンクに対するサイズ警告は残る。DBスキーマ・Rules・クラウド設定はこの変更では更新していない。

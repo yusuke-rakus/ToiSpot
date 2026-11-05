@@ -21,7 +21,6 @@ import { Button } from '@/components/ui/button'
 import {
   availabilityLabels,
   formatEquipmentCount,
-  layoutLabels,
   type Store,
 } from './store-schema'
 import { registrationLabels, type MapEntry } from '../places/map-entries'
@@ -43,6 +42,11 @@ type Props = {
   registrationFetching: boolean
   registrationError: boolean
   onRetryPlaces: () => void
+  searchPaused?: boolean
+  searchSuspended?: boolean
+  viewportSearch?: boolean
+  placesLimited?: boolean
+  placesPartialError?: boolean
 }
 
 export function StorePanel({
@@ -60,6 +64,11 @@ export function StorePanel({
   registrationFetching,
   registrationError,
   onRetryPlaces,
+  searchPaused = false,
+  searchSuspended = false,
+  viewportSearch = false,
+  placesLimited = false,
+  placesPartialError = false,
 }: Props) {
   const result = query.data
   return (
@@ -76,7 +85,12 @@ export function StorePanel({
         <Button
           variant="outline"
           className="h-9 gap-1.5"
-          disabled={!query.enabled || query.isFetching || registrationFetching}
+          disabled={
+            !query.enabled ||
+            query.isFetching ||
+            registrationFetching ||
+            searchSuspended
+          }
           onClick={onRefresh}
           aria-label="店舗情報を更新"
         >
@@ -97,7 +111,8 @@ export function StorePanel({
       )}
 
       {!query.enabled && <Notice>登録情報を利用できません。</Notice>}
-      {query.enabled && query.isPending && (
+      {searchPaused && <Notice>地図を拡大すると検索を再開します</Notice>}
+      {query.enabled && query.isPending && !searchSuspended && (
         <p
           role="status"
           className="flex items-center gap-2 py-5 text-sm text-muted-foreground"
@@ -134,22 +149,53 @@ export function StorePanel({
         </p>
       )}
 
-      {placesStatus === 'loading' && <Notice>周辺のコンビニを検索中</Notice>}
-      {placesStatus === 'error' && (
+      {placesStatus === 'loading' && !searchSuspended && (
+        <Notice>周辺のコンビニを検索中</Notice>
+      )}
+      {placesLimited && (
+        <Notice>取得上限に達したため、一部のコンビニを表示しています。</Notice>
+      )}
+      {placesPartialError && placesStatus !== 'error' && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription className="space-y-2">
-            <p>コンビニを検索できませんでした。</p>
-            <Button variant="outline" onClick={onRetryPlaces}>
+            <p>一部の範囲のコンビニを取得できませんでした。</p>
+            <Button
+              variant="outline"
+              onClick={onRetryPlaces}
+              disabled={searchSuspended || placesStatus === 'loading'}
+            >
               コンビニ検索を再試行
             </Button>
           </AlertDescription>
         </Alert>
       )}
-      {placesStatus === 'success' && entries.every((entry) => !entry.place) && (
-        <Empty role="status" className="px-0">
-          <EmptyDescription>周辺にコンビニが見つかりません。</EmptyDescription>
-        </Empty>
+      {placesStatus === 'error' && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription className="space-y-2">
+            <p>コンビニを検索できませんでした。</p>
+            {viewportSearch && entries.some((entry) => entry.place) && (
+              <p>前回取得したコンビニを表示しています。</p>
+            )}
+            <Button
+              variant="outline"
+              onClick={onRetryPlaces}
+              disabled={searchSuspended}
+            >
+              コンビニ検索を再試行
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
+      {placesStatus === 'success' &&
+        !placesPartialError &&
+        !placesLimited &&
+        entries.every((entry) => !entry.place) && (
+          <Empty role="status" className="px-0">
+            <EmptyDescription>
+              周辺にコンビニが見つかりません。
+            </EmptyDescription>
+          </Empty>
+        )}
       {registrationError && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>
@@ -233,7 +279,9 @@ export function StorePanel({
                 : result.truncated
                   ? '取得した候補に表示できる店舗がありません。'
                   : areaLabel
-                    ? '半径3km以内に登録された店舗はありません。'
+                    ? viewportSearch
+                      ? '地図の表示範囲内に登録された店舗はありません。'
+                      : '半径3km以内に登録された店舗はありません。'
                     : '登録された店舗はありません。'}
             </EmptyDescription>
           </Empty>
@@ -264,9 +312,7 @@ export function AvailabilityBadge({ store }: { store: Store }) {
   const style =
     store.availability === 'available'
       ? 'bg-primary/10 text-primary'
-      : store.availability === 'conditional'
-        ? 'bg-amber-50 text-amber-900 dark:bg-amber-400/15 dark:text-amber-200'
-        : 'bg-muted text-muted-foreground'
+      : 'bg-muted text-muted-foreground'
   return (
     <Badge
       variant="secondary"
@@ -277,21 +323,36 @@ export function AvailabilityBadge({ store }: { store: Store }) {
   )
 }
 
-function StoreDetails({ store }: { store: Store }) {
-  const equipment = [
-    ['男性用個室', formatEquipmentCount(store.stalls.male, '室')],
-    ['女性用個室', formatEquipmentCount(store.stalls.female, '室')],
-    ['共用個室', formatEquipmentCount(store.stalls.shared, '室')],
-    ['男性用小便器', formatEquipmentCount(store.urinals)],
-  ]
-  const confirmed = store.lastConfirmedAt
-    ? new Intl.DateTimeFormat('ja-JP', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone: 'Asia/Tokyo',
-      }).format(new Date(store.lastConfirmedAt))
-    : '未確認'
+export function StoreDetails({ store }: { store: Store }) {
+  const equipment =
+    store.availability === 'available'
+      ? [
+          {
+            label: '共用個室',
+            count: store.stalls.shared,
+            unit: '室',
+            icon: '🚻',
+          },
+          {
+            label: '男性用個室',
+            count: store.stalls.male,
+            unit: '室',
+            icon: '🚹',
+          },
+          {
+            label: '女性用個室',
+            count: store.stalls.female,
+            unit: '室',
+            icon: '🚺',
+          },
+          {
+            label: '男性用小便器',
+            count: store.urinals,
+            unit: '基',
+            icon: <UrinalIcon />,
+          },
+        ].filter(({ count }) => count !== 0)
+      : []
   return (
     <article className="map-panel-enter" aria-label="店舗の詳細">
       <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -305,41 +366,63 @@ function StoreDetails({ store }: { store: Store }) {
         {store.address}
       </p>
       <Separator className="mt-6" />
-      <div className="pt-5">
-        <h4 className="mb-3 text-xs font-medium text-muted-foreground">
-          貸出状況
-        </h4>
+      <div className="flex items-center justify-between gap-3 pt-5">
+        <h4 className="text-xs font-medium text-muted-foreground">貸出状況</h4>
         <AvailabilityBadge store={store} />
-        {store.conditions && (
-          <p className="mt-3 text-sm leading-7">{store.conditions}</p>
-        )}
       </div>
-      <Separator className="mt-5" />
-      <div className="pt-5">
-        <h4 className="text-sm font-medium">設備の内訳</h4>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {layoutLabels[store.genderLayout]}
-        </p>
-        <dl className="mt-3 divide-y">
-          {equipment.map(([label, count]) => (
-            <div
-              key={label}
-              className="flex items-center justify-between gap-4 py-3 text-sm"
-            >
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-medium tabular-nums">{count}</dd>
+      {equipment.length > 0 && (
+        <dl
+          aria-label="トイレ設備"
+          className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5"
+        >
+          {equipment.map(({ label, count, unit, icon }) => (
+            <div key={label} className="min-w-0">
+              <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span
+                  aria-hidden="true"
+                  className="flex size-6 shrink-0 items-center justify-center text-xl"
+                >
+                  {icon}
+                </span>
+                {label}
+              </dt>
+              <dd className="mt-1 pl-8 text-xl font-semibold tabular-nums">
+                {formatEquipmentCount(count, unit)}
+              </dd>
             </div>
           ))}
         </dl>
-      </div>
-      <Separator className="mt-4" />
-      <div className="pt-5">
-        <h4 className="text-xs font-medium text-muted-foreground">備考</h4>
-        <p className="mt-2 text-sm leading-7">{store.notes || '記載なし'}</p>
-      </div>
-      <p className="mt-6 text-xs leading-6 text-muted-foreground">
-        最終確認日：{confirmed}
-      </p>
+      )}
+      {store.notes.trim() && (
+        <>
+          <Separator className="mt-6" />
+          <div className="pt-5">
+            <h4 className="text-xs font-medium text-muted-foreground">備考</h4>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-7">
+              {store.notes}
+            </p>
+          </div>
+        </>
+      )}
     </article>
+  )
+}
+
+function UrinalIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-6"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M7 3h10v10a5 5 0 0 1-10 0V3Z" />
+      <path d="M10 7h4M9 11v2a3 3 0 0 0 6 0v-2M12 18v3m-2 0h4" />
+    </svg>
   )
 }

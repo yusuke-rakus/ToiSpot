@@ -1,4 +1,5 @@
-import { AdvancedMarker, Pin } from '@vis.gl/react-google-maps'
+import { AdvancedMarker } from '@vis.gl/react-google-maps'
+import { MapMarkerPin } from '../map/map-marker-pin'
 import { registrationLabels, type MapEntry } from './map-entries'
 
 export function PlaceMarkers({
@@ -20,11 +21,9 @@ export function PlaceMarkers({
         onClick={() => onSelect(entry.place!.id)}
         zIndex={entry.place!.id === selectedId ? 10 : 0}
       >
-        <Pin
-          scale={entry.place!.id === selectedId ? 1.3 : 1}
-          background="#9ca3af"
-          borderColor="#6b7280"
-          glyphColor="#ffffff"
+        <MapMarkerPin
+          selected={entry.place!.id === selectedId}
+          registered={false}
         />
       </AdvancedMarker>
     ))

@@ -12,14 +12,27 @@ import {
 import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
 import { parseStoreDocuments, STORE_DISPLAY_LIMIT } from './store-schema'
 import { geohashQueryBounds } from 'geofire-common'
-import type { MapPoint } from '@/features/map/map-config'
+import {
+  areaCenter,
+  coveringRadius,
+  isViewport,
+  type SearchArea,
+} from '@/features/map/search-area'
 import { collectNearbyStores, NEARBY_RADIUS_KM } from './nearby-stores'
 export { NEARBY_RADIUS_KM } from './nearby-stores'
 
-export async function readNearbyStores(db: Firestore, center: MapPoint) {
+export async function readNearbyStores(
+  db: Firestore,
+  area: SearchArea,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted()
+  const center = areaCenter(area)
   const bounds = geohashQueryBounds(
     [center.lat, center.lng],
-    NEARBY_RADIUS_KM * 1000,
+    isViewport(area)
+      ? coveringRadius(area.bounds, center)
+      : NEARBY_RADIUS_KM * 1000,
   )
   const snapshots = await Promise.all(
     bounds.map(([start, end]) =>
@@ -34,6 +47,7 @@ export async function readNearbyStores(db: Firestore, center: MapPoint) {
       ),
     ),
   )
+  signal?.throwIfAborted()
   return collectNearbyStores(
     snapshots.map((snapshot) =>
       snapshot.docs.map((document) => ({
@@ -42,6 +56,7 @@ export async function readNearbyStores(db: Firestore, center: MapPoint) {
       })),
     ),
     center,
+    isViewport(area) ? area.bounds : undefined,
   )
 }
 
@@ -62,9 +77,12 @@ export async function readStores(db: Firestore) {
   )
 }
 
-export async function fetchLocalStores(center?: MapPoint) {
+export async function fetchLocalStores(
+  area?: SearchArea,
+  signal?: AbortSignal,
+) {
   if (!usesFirebaseEmulators)
     throw new Error('Store browsing is restricted to the local emulator')
   const db = getFirebaseServices().db
-  return center ? readNearbyStores(db, center) : readStores(db)
+  return area ? readNearbyStores(db, area, signal) : readStores(db)
 }

@@ -35,9 +35,6 @@ export async function seedStores(db: Firestore) {
           ...data,
           createdAt: Timestamp.fromDate(new Date(data.createdAt)),
           updatedAt: Timestamp.fromDate(new Date(data.updatedAt)),
-          lastConfirmedAt: data.lastConfirmedAt
-            ? Timestamp.fromDate(new Date(data.lastConfirmedAt))
-            : null,
         })
         result.created += 1
       }

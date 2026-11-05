@@ -8,13 +8,29 @@ export const APILoadingStatus = {
 }
 export const useApiLoadingStatus = () => 'LOADED'
 let center = { lat: 35.681236, lng: 139.767125 }
+let mapZoom = 15
+let notifyCamera: (() => void) | null = null
+function bounds() {
+  const extent = 0.02 * 2 ** (14 - mapZoom)
+  return {
+    north: center.lat + extent,
+    south: center.lat - extent,
+    east: center.lng + extent,
+    west: center.lng - extent,
+  }
+}
 const map = {
   panTo: (point: typeof center) => {
     center = point
+    queueMicrotask(() => notifyCamera?.())
   },
-  setZoom: () => {},
-  getZoom: () => 15,
+  setZoom: (zoom: number) => {
+    mapZoom = zoom
+    queueMicrotask(() => notifyCamera?.())
+  },
+  getZoom: () => mapZoom,
   getCenter: () => ({ toJSON: () => center }),
+  getBounds: () => ({ toJSON: bounds }),
 }
 export const useMap = () => map
 export const APIProvider = ({ children }: { children: ReactNode }) => children
@@ -27,6 +43,7 @@ export function Map({
   center: cameraCenter,
   zoom,
   onCameraChanged,
+  onDragstart,
 }: {
   children: ReactNode
   onTilesLoaded: () => void
@@ -41,9 +58,29 @@ export function Map({
       zoom: number
       heading: number
       tilt: number
+      bounds: ReturnType<typeof bounds>
     }
   }) => void
+  onDragstart?: () => void
 }) {
+  useEffect(() => {
+    const notify = () => {
+      onCameraChanged({
+        detail: {
+          center,
+          zoom: mapZoom,
+          heading: 0,
+          tilt: 0,
+          bounds: bounds(),
+        },
+      })
+      onIdle()
+    }
+    notifyCamera = notify
+    return () => {
+      if (notifyCamera === notify) notifyCamera = null
+    }
+  }, [onCameraChanged, onIdle])
   useEffect(() => {
     onTilesLoaded()
   }, [onTilesLoaded])
@@ -73,12 +110,47 @@ export function Map({
           fontSize: 12,
         }}
         onClick={() => {
-          center = { lat: 35.69, lng: 139.78 }
-          onCameraChanged({ detail: { center, zoom: 17, heading: 0, tilt: 0 } })
-          onIdle()
+          onDragstart?.()
+          center = { lat: center.lat + 0.01, lng: center.lng + 0.01 }
+          mapZoom = 17
+          notifyCamera?.()
         }}
       >
         地図を移動
+      </button>
+      <button
+        style={{
+          position: 'absolute',
+          bottom: 104,
+          right: 12,
+          background: 'var(--background)',
+          color: 'var(--foreground)',
+          padding: 8,
+          fontSize: 12,
+        }}
+        onClick={() => {
+          mapZoom = 12
+          notifyCamera?.()
+        }}
+      >
+        地図を縮小
+      </button>
+      <button
+        style={{
+          position: 'absolute',
+          bottom: 144,
+          right: 12,
+          background: 'var(--background)',
+          color: 'var(--foreground)',
+          padding: 8,
+          fontSize: 12,
+        }}
+        onClick={() => {
+          mapZoom = 13
+          notifyCamera?.()
+        }}
+      >
+        地図を拡大
       </button>
       <span style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 10 }}>
         Google Maps（テスト表示）
@@ -114,32 +186,5 @@ export function AdvancedMarker({
     <div aria-label={title} style={style}>
       {children}
     </div>
-  )
-}
-export function Pin({
-  background,
-  borderColor,
-  glyphColor,
-  scale = 1,
-}: {
-  background: string
-  borderColor: string
-  glyphColor: string
-  scale?: number
-}) {
-  return (
-    <svg
-      width={28 * scale}
-      height={38 * scale}
-      viewBox="0 0 28 38"
-      aria-hidden="true"
-    >
-      <path
-        d="M14 37C11 30 1 24 1 14a13 13 0 0 1 26 0c0 10-10 16-13 23Z"
-        fill={background}
-        stroke={borderColor}
-      />
-      <circle cx="14" cy="14" r="5" fill={glyphColor} />
-    </svg>
   )
 }

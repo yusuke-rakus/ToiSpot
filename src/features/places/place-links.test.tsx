@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createQueryClient } from '@/lib/query-client'
@@ -18,9 +18,9 @@ vi.mock('firebase/firestore', () => ({
 }))
 const store = {
   ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
-  id: 'registered',
   googlePlaceId: 'ChIJ_test',
 }
+const storeId = 'registered'
 const places = [
   {
     id: 'ChIJ_test',
@@ -37,10 +37,59 @@ beforeEach(() => {
     path.startsWith('placeLinks/')
       ? {
           exists: () => state.registered,
-          data: () => ({ storeId: store.id }),
+          data: () => ({ storeId }),
         }
-      : { exists: () => true, id: store.id, data: () => store },
+      : { exists: () => true, id: storeId, data: () => store },
   )
+})
+
+it('停止中は登録照会を開始せず、前回取得した情報を保持する', async () => {
+  const client = createQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result, rerender, unmount } = renderHook(
+    ({ suspended }) => usePlaceLinks(places, 1, suspended),
+    { wrapper, initialProps: { suspended: true } },
+  )
+  expect(state.read).not.toHaveBeenCalled()
+  rerender({ suspended: false })
+  await waitFor(() => expect(result.current.data?.ChIJ_test).toBeNull())
+  rerender({ suspended: true })
+  expect(result.current.data?.ChIJ_test).toBeNull()
+  rerender({ suspended: false })
+  expect(state.read).toHaveBeenCalledOnce()
+  unmount()
+  client.clear()
+})
+
+it('照会中に停止すると、返ってきた紐付けから店舗の追加取得を開始しない', async () => {
+  const client = createQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  let finish!: (value: {
+    exists: () => boolean
+    data: () => { storeId: string }
+  }) => void
+  state.read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const { rerender, unmount } = renderHook(
+    ({ suspended }) => usePlaceLinks(places, 1, suspended),
+    { wrapper, initialProps: { suspended: false } },
+  )
+  await waitFor(() => expect(state.read).toHaveBeenCalledOnce())
+  rerender({ suspended: true })
+  await act(async () => {
+    finish({ exists: () => true, data: () => ({ storeId }) })
+  })
+  expect(state.read).toHaveBeenCalledOnce()
+  unmount()
+  client.clear()
 })
 
 it('同じ候補への再検索でも、以前の未登録判定を使わず新しい登録情報を取得する', async () => {
@@ -55,7 +104,7 @@ it('同じ候補への再検索でも、以前の未登録判定を使わず新�
   await waitFor(() => expect(result.current.data?.ChIJ_test).toBeNull())
   state.registered = true
   rerender({ search: 2 })
-  await waitFor(() => expect(result.current.data?.ChIJ_test?.id).toBe(store.id))
+  await waitFor(() => expect(result.current.data?.ChIJ_test?.id).toBe(storeId))
   expect(state.read).toHaveBeenCalledTimes(3)
   unmount()
   client.clear()

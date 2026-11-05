@@ -12,16 +12,13 @@
       },
       "geohash": "xn74ut6vmm",
       "availability": "unavailable",
-      "conditions": "",
-      "genderLayout": "unknown",
       "stalls": {
-        "male": 0,
-        "female": 0,
-        "shared": 0
+        "male": null,
+        "female": null,
+        "shared": null
       },
-      "urinals": 0,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "urinals": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -40,16 +37,13 @@
       },
       "geohash": "xn74utev12",
       "availability": "available",
-      "conditions": "",
-      "genderLayout": "shared",
       "stalls": {
         "male": 0,
         "female": 0,
         "shared": 2
       },
       "urinals": 0,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -68,16 +62,13 @@
       },
       "geohash": "xn74ukcxfb",
       "availability": "available",
-      "conditions": "",
-      "genderLayout": "unknown",
       "stalls": {
         "male": null,
         "female": null,
         "shared": null
       },
       "urinals": null,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -96,16 +87,13 @@
       },
       "geohash": "xn74umfzyn",
       "availability": "available",
-      "conditions": "",
-      "genderLayout": "mixed",
       "stalls": {
         "male": 1,
         "female": 1,
         "shared": 1
       },
       "urinals": 1,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -124,16 +112,13 @@
       },
       "geohash": "xn74uw0v1b",
       "availability": "available",
-      "conditions": "",
-      "genderLayout": "separate",
       "stalls": {
         "male": 1,
         "female": 1,
         "shared": 0
       },
       "urinals": 1,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -152,16 +137,13 @@
       },
       "geohash": "xn74ums9ut",
       "availability": "unavailable",
-      "conditions": "",
-      "genderLayout": "unknown",
       "stalls": {
         "male": null,
         "female": null,
         "shared": null
       },
       "urinals": null,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"
@@ -180,16 +162,13 @@
       },
       "geohash": "xn74uqprwy",
       "availability": "available",
-      "conditions": "",
-      "genderLayout": "shared",
       "stalls": {
         "male": 0,
         "female": 0,
         "shared": 1
       },
       "urinals": 0,
-      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備区分・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
-      "lastConfirmedAt": null,
+      "notes": "【テストデータ・実地未確認】表示・登録編集の動作確認用です。貸出状況・設備数は架空の設定で、実際の店舗のトイレ情報ではありません。店名・住所・位置・Place IDは2026年11月3日のPlaces検索から取得しました。",
       "isSample": false,
       "createdAt": "2026-11-03T13:23:57.191Z",
       "updatedAt": "2026-11-03T13:23:57.191Z"

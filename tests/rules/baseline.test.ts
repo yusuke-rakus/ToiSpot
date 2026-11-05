@@ -464,13 +464,17 @@ describe('管理者設定と書き込みRules', () => {
       { location: { lat: 35, lng: '139' } },
       { location: { lat: 35, lng: 139, extra: true } },
       { availability: 'invalid' },
-      { genderLayout: 'invalid' },
-      { availability: 'conditional', conditions: ' \n' },
+      { genderLayout: 'shared' },
+      { conditions: '' },
+      { lastConfirmedAt: null },
+      { availability: 'conditional' },
+      { availability: 'temporarily_unavailable' },
+      { availability: 'unknown' },
+      { availability: 'unavailable' },
       { stalls: { male: -1, female: 0, shared: 0 } },
       { urinals: 0.5 },
       { stalls: { male: 0, female: 0 } },
       { notes: 3 },
-      { lastConfirmedAt: '2026-11-03' },
       { geohash: 'INVALID' },
       { isSample: true },
       { extra: true },
@@ -487,8 +491,51 @@ describe('管理者設定と書き込みRules', () => {
     await assertSucceeds(
       createLinkedStore(db, 'multiline', {
         ...newPayload(),
-        availability: 'conditional',
-        conditions: '商品購入後\n声をかけてください',
+        notes: '商品購入後\n声をかけてください',
+      }),
+    )
+  })
+
+  it('利用不可は設備数がすべてnullの場合だけ作成・編集できる', async () => {
+    const db = manager()
+    const unavailable = {
+      ...newPayload(),
+      availability: 'unavailable' as const,
+      stalls: { male: null, female: null, shared: null },
+      urinals: null,
+    }
+    await assertSucceeds(createLinkedStore(db, 'unavailable', unavailable))
+    const store = doc(db, 'stores/unavailable')
+    for (const change of [
+      { stalls: { ...unavailable.stalls, male: 0 } },
+      { stalls: { ...unavailable.stalls, female: 1 } },
+      { stalls: { ...unavailable.stalls, shared: 2 } },
+      { urinals: 0 },
+      { urinals: 1 },
+    ])
+      await assertFails(
+        updateDoc(store, { ...change, updatedAt: serverTimestamp() }),
+      )
+    await assertSucceeds(
+      updateDoc(store, {
+        availability: 'available',
+        stalls: { male: 1, female: 0, shared: null },
+        urinals: 1,
+        updatedAt: serverTimestamp(),
+      }),
+    )
+    await assertFails(
+      updateDoc(store, {
+        availability: 'unavailable',
+        updatedAt: serverTimestamp(),
+      }),
+    )
+    await assertSucceeds(
+      updateDoc(store, {
+        availability: 'unavailable',
+        stalls: unavailable.stalls,
+        urinals: null,
+        updatedAt: serverTimestamp(),
       }),
     )
   })

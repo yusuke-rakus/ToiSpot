@@ -66,13 +66,16 @@ it('Placesの店舗から新規登録し、空欄と0を区別して同じIDで�
   expect(screen.queryByLabelText('経度')).not.toBeInTheDocument()
   expect(screen.queryByLabelText('チェーン名')).not.toBeInTheDocument()
   expect(screen.queryByLabelText('利用条件')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('設備区分')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('最終確認日')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('男性用個室（室）')).not.toBeInTheDocument()
   expect(
     Array.from((screen.getByLabelText('貸出状況') as HTMLSelectElement).options)
       .filter((option) => !option.disabled)
       .map((option) => option.text),
   ).toEqual(['利用可', '利用不可'])
   await user.selectOptions(screen.getByLabelText('コンビニの種類'), 'ローソン')
-  await user.selectOptions(screen.getByLabelText('貸出状況'), 'unavailable')
+  await user.selectOptions(screen.getByLabelText('貸出状況'), 'available')
   await user.type(screen.getByLabelText('男性用個室（室）'), '0')
   await user.click(screen.getByRole('button', { name: '保存する' }))
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith('fixed-new-id'))
@@ -80,11 +83,28 @@ it('Placesの店舗から新規登録し、空欄と0を区別して同じIDで�
     { id: 'fixed-new-id', googlePlaceId: 'ChIJ_new' },
     expect.objectContaining({
       chainName: 'ローソン',
-      availability: 'unavailable',
-      conditions: '',
+      availability: 'available',
       location: { lat: 35.68, lng: 139.76 },
       stalls: { male: 0, female: null, shared: null },
-      lastConfirmedAt: null,
+      urinals: null,
+    }),
+  )
+  for (const field of ['conditions', 'genderLayout', 'lastConfirmedAt'])
+    expect(mock.save.mock.calls[0][1]).not.toHaveProperty(field)
+})
+it('利用不可は設備入力なしで新規登録できる', async () => {
+  const { user, onSaved } = setup()
+  await user.selectOptions(screen.getByLabelText('コンビニの種類'), 'ローソン')
+  await user.selectOptions(screen.getByLabelText('貸出状況'), 'unavailable')
+  expect(screen.queryByLabelText('男性用個室（室）')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '保存する' }))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith('fixed-new-id'))
+  expect(mock.save).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      availability: 'unavailable',
+      stalls: { male: null, female: null, shared: null },
+      urinals: null,
     }),
   )
 })
@@ -95,9 +115,11 @@ it('保存失敗でも編集内容を残し、再試行できる', async () => {
   const { user, onSaved } = setup(true)
   await user.clear(screen.getByLabelText('店名'))
   await user.type(screen.getByLabelText('店名'), '変更した店名')
+  await user.type(screen.getByLabelText('男性用個室（室）'), '2')
   await user.click(screen.getByRole('button', { name: '保存する' }))
   expect(await screen.findByText(/保存できませんでした/)).toBeVisible()
   expect(screen.getByLabelText('店名')).toHaveValue('変更した店名')
+  expect(screen.getByLabelText('男性用個室（室）')).toHaveValue(2)
   await user.click(screen.getByRole('button', { name: '保存する' }))
   await waitFor(() => expect(onSaved).toHaveBeenCalled())
   expect(mock.save).toHaveBeenCalledTimes(2)
@@ -106,17 +128,29 @@ it('保存失敗でも編集内容を残し、再試行できる', async () => {
     expect.objectContaining({ location: { lat: 35.6818, lng: 139.764 } }),
   )
 })
-it('未確認チェックの切り替えで確認日の入力と保存を連動する', async () => {
+it('貸出状況を切り替えても入力を保持し、利用不可では設備のエラーを無視して保存する', async () => {
   const { user, onSaved } = setup(true)
-  expect(screen.getByLabelText('最終確認日')).toBeDisabled()
-  await user.click(screen.getByLabelText('最終確認日は未確認'))
-  expect(screen.getByLabelText('最終確認日')).toBeEnabled()
-  await user.type(screen.getByLabelText('最終確認日'), '2026-11-03')
+  await user.clear(screen.getByLabelText('男性用個室（室）'))
+  await user.type(screen.getByLabelText('男性用個室（室）'), '-1')
+  await user.click(screen.getByRole('button', { name: '保存する' }))
+  expect(await screen.findByText('0以上を入力してください')).toBeVisible()
+  expect(mock.save).not.toHaveBeenCalled()
+  await user.selectOptions(screen.getByLabelText('貸出状況'), 'unavailable')
+  expect(screen.queryByLabelText('男性用個室（室）')).not.toBeInTheDocument()
+  expect(screen.queryByText('0以上を入力してください')).not.toBeInTheDocument()
+  await user.selectOptions(screen.getByLabelText('貸出状況'), 'available')
+  expect(screen.getByLabelText('男性用個室（室）')).toHaveValue(-1)
+  expect(screen.getByLabelText('共用個室（室）')).toHaveValue(2)
+  await user.selectOptions(screen.getByLabelText('貸出状況'), 'unavailable')
   await user.click(screen.getByRole('button', { name: '保存する' }))
   await waitFor(() => expect(onSaved).toHaveBeenCalled())
   expect(mock.save).toHaveBeenCalledWith(
     expect.anything(),
-    expect.objectContaining({ lastConfirmedAt: '2026-11-02T15:00:00.000Z' }),
+    expect.objectContaining({
+      availability: 'unavailable',
+      stalls: { male: null, female: null, shared: null },
+      urinals: null,
+    }),
   )
 })
 it('保存中の連打と閉じる操作を抑え、未保存の破棄を確認する', async () => {

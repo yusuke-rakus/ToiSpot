@@ -1,5 +1,6 @@
 import { distanceBetween } from 'geofire-common'
 import type { MapPoint } from '@/features/map/map-config'
+import { containsPoint, type MapBounds } from '@/features/map/search-area'
 import {
   storeDocumentSchema,
   STORE_DISPLAY_LIMIT,
@@ -13,6 +14,7 @@ export const NEARBY_RADIUS_KM = 3
 export function collectNearbyStores(
   batches: ReadonlyArray<ReadonlyArray<{ id: string; data: unknown }>>,
   center: MapPoint,
+  viewport?: MapBounds,
 ): StoreListResult {
   const seen = new Set<string>()
   const matches: { store: Store; distance: number }[] = []
@@ -30,7 +32,11 @@ export function collectNearbyStores(
       }
       const { lat, lng } = parsed.data.location
       const distance = distanceBetween([center.lat, center.lng], [lat, lng])
-      if (distance <= NEARBY_RADIUS_KM)
+      if (
+        viewport
+          ? containsPoint(viewport, { lat, lng })
+          : distance <= NEARBY_RADIUS_KM
+      )
         matches.push({ store: { ...parsed.data, id: document.id }, distance })
     }
   }

@@ -3,7 +3,6 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
-  Timestamp,
   type Firestore,
 } from 'firebase/firestore'
 import { geohashForLocation } from 'geofire-common'
@@ -42,9 +41,6 @@ export async function saveStore(
     ...parsed,
     googlePlaceId: placeId,
     geohash: geohashForLocation([parsed.location.lat, parsed.location.lng]),
-    lastConfirmedAt: parsed.lastConfirmedAt
-      ? Timestamp.fromDate(new Date(parsed.lastConfirmedAt))
-      : null,
     updatedAt: serverTimestamp(),
   }
   const ref = doc(db, 'stores', target.id)

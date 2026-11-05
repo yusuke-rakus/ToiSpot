@@ -1,26 +1,13 @@
 import { z } from 'zod'
 
-export const availabilitySchema = z.enum([
-  'available',
-  'conditional',
-  'unavailable',
-  'temporarily_unavailable',
-  'unknown',
-])
+export const availabilitySchema = z.enum(['available', 'unavailable'], {
+  error: '貸出状況を選択してください',
+})
 export type Availability = z.infer<typeof availabilitySchema>
 export const availabilityLabels: Record<Availability, string> = {
   available: '利用可',
-  conditional: '条件付き',
   unavailable: '利用不可',
-  temporarily_unavailable: '一時停止',
-  unknown: '不明',
 }
-export const layoutLabels = {
-  separate: '男女別',
-  shared: '共用',
-  mixed: '男女別・共用の混在',
-  unknown: '不明',
-} as const
 
 // Web SDK・Admin SDKのTimestampを、画面で扱うISO文字列へ正規化する。
 const timestampSchema = z.preprocess((value) => {
@@ -53,8 +40,6 @@ const storeObjectSchema = z.object({
   }),
   geohash: z.string().regex(/^[0123456789bcdefghjkmnpqrstuvwxyz]{1,12}$/),
   availability: availabilitySchema,
-  conditions: z.string(),
-  genderLayout: z.enum(['separate', 'shared', 'mixed', 'unknown']),
   stalls: z.object({
     male: countSchema,
     female: countSchema,
@@ -62,7 +47,6 @@ const storeObjectSchema = z.object({
   }),
   urinals: countSchema,
   notes: z.string(),
-  lastConfirmedAt: timestampSchema.nullable(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
   isSample: z
@@ -70,18 +54,21 @@ const storeObjectSchema = z.object({
     .default(false)
     .refine((value) => !value),
 })
-const hasConditions = (data: {
+const hasValidEquipment = (data: {
   availability: Availability
-  conditions: string
-}) => data.availability !== 'conditional' || data.conditions.trim().length > 0
-const conditionError = {
-  message: '条件付きの場合は利用条件を入力してください',
-  path: ['conditions'],
+  stalls: { male: number | null; female: number | null; shared: number | null }
+  urinals: number | null
+}) =>
+  data.availability === 'available' ||
+  (Object.values(data.stalls).every((count) => count === null) &&
+    data.urinals === null)
+const equipmentError = {
+  message: '利用不可の場合は設備数を記録できません',
+  path: ['stalls'],
 }
-export const storeDocumentSchema = storeObjectSchema.refine(
-  hasConditions,
-  conditionError,
-)
+export const storeDocumentSchema = storeObjectSchema
+  .strict()
+  .refine(hasValidEquipment, equipmentError)
 export const storeInputSchema = storeObjectSchema
   .omit({
     geohash: true,
@@ -90,7 +77,7 @@ export const storeInputSchema = storeObjectSchema
     isSample: true,
     googlePlaceId: true,
   })
-  .refine(hasConditions, conditionError)
+  .refine(hasValidEquipment, equipmentError)
 export type StoreInput = z.infer<typeof storeInputSchema>
 export type StoreDocument = z.infer<typeof storeDocumentSchema>
 export type Store = StoreDocument & { id: string }

@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { X } from 'lucide-react'
@@ -24,7 +24,6 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -39,14 +38,13 @@ import { useAdmin } from '@/features/auth/admin-provider'
 import { errorCode } from '@/features/auth/auth-repository'
 import {
   availabilityLabels,
-  layoutLabels,
+  availabilitySchema,
   storeInputSchema,
 } from './store-schema'
 import {
   storeFormDefaults,
   storeFormSchema,
   convenienceStoreTypes,
-  registrationAvailability,
   type StoreFormValues,
   type StoreFormData,
 } from './store-form-schema'
@@ -95,7 +93,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
     register,
     formState: { errors, isDirty, isSubmitting },
   } = form
-  const unknown = useWatch({ control: form.control, name: 'confirmedUnknown' })
+  const availability = useWatch({ control: form.control, name: 'availability' })
   const saving = isSubmitting || mutation.isPending
   const allowed = admin.status === 'admin'
   function close() {
@@ -127,15 +125,11 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
     name: keyof StoreFormValues,
     label: string,
     control: ReactNode,
-    hint?: string,
   ) {
     return (
       <Field data-invalid={!!errors[name]}>
         <FieldLabel htmlFor={`store-${name}`}>{label}</FieldLabel>
         {control}
-        {hint && (
-          <FieldDescription id={`hint-${name}`}>{hint}</FieldDescription>
-        )}
         {errors[name] && (
           <FieldError id={`error-${name}`} role="alert">
             {errors[name]?.message}
@@ -148,12 +142,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
     return {
       id: `store-${name}`,
       'aria-invalid': !!errors[name],
-      'aria-describedby': [
-        errors[name] && `error-${name}`,
-        name === 'confirmedDate' && `hint-${name}`,
-      ]
-        .filter(Boolean)
-        .join(' '),
+      'aria-describedby': errors[name] ? `error-${name}` : undefined,
     }
   }
   function text(name: 'name' | 'address', label: string) {
@@ -191,7 +180,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
               {target.original ? '店舗を編集' : '店舗を登録'}
             </DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-5 text-muted-foreground">
-              設備数の空欄は不明として扱います。
+              店舗とトイレの貸出状況を登録します。
             </DialogDescription>
           </DialogHeader>
           <Button
@@ -248,54 +237,52 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
                   <NativeSelectOption value="" disabled>
                     選択してください
                   </NativeSelectOption>
-                  {registrationAvailability.map((value) => (
+                  {availabilitySchema.options.map((value) => (
                     <NativeSelectOption key={value} value={value}>
                       {availabilityLabels[value]}
                     </NativeSelectOption>
                   ))}
                 </NativeSelect>,
               )}
-              {field(
-                'genderLayout',
-                '設備区分',
-                <NativeSelect
-                  className={selectClass}
-                  {...attrs('genderLayout')}
-                  {...register('genderLayout')}
-                >
-                  {Object.entries(layoutLabels).map(([value, label]) => (
-                    <NativeSelectOption key={value} value={value}>
-                      {label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>,
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                {(
-                  [
-                    ['male', '男性用個室（室）'],
-                    ['female', '女性用個室（室）'],
-                    ['shared', '共用個室（室）'],
-                    ['urinals', '男性用小便器（基）'],
-                  ] as const
-                ).map(([name, label]) => (
-                  <div key={name}>
-                    {field(
-                      name,
-                      label,
-                      <Input
-                        className="h-10"
-                        type="number"
-                        min="0"
-                        step="1"
-                        placeholder="不明"
-                        {...attrs(name)}
-                        {...register(name)}
-                      />,
-                    )}
+              {availability === 'available' && (
+                <div className="space-y-3">
+                  <FieldDescription id="equipment-hint">
+                    設備数の空欄は不明、0は設備なしとして扱います。
+                  </FieldDescription>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(
+                      [
+                        ['male', '男性用個室（室）'],
+                        ['female', '女性用個室（室）'],
+                        ['shared', '共用個室（室）'],
+                        ['urinals', '男性用小便器（基）'],
+                      ] as const
+                    ).map(([name, label]) => (
+                      <div key={name}>
+                        {field(
+                          name,
+                          label,
+                          <Input
+                            className="h-10"
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="不明"
+                            {...attrs(name)}
+                            aria-describedby={[
+                              'equipment-hint',
+                              errors[name] && `error-${name}`,
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                            {...register(name)}
+                          />,
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
               {field(
                 'notes',
                 '備考',
@@ -305,42 +292,6 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
                   {...register('notes')}
                 />,
               )}
-              <div className="space-y-3">
-                <Field orientation="horizontal">
-                  <Controller
-                    name="confirmedUnknown"
-                    control={form.control}
-                    render={({ field }) => (
-                      <Checkbox
-                        id="store-confirmedUnknown"
-                        name={field.name}
-                        ref={field.ref}
-                        checked={field.value}
-                        onCheckedChange={(checked) =>
-                          field.onChange(checked === true)
-                        }
-                        onBlur={field.onBlur}
-                        disabled={saving || !allowed}
-                      />
-                    )}
-                  />
-                  <FieldLabel htmlFor="store-confirmedUnknown">
-                    最終確認日は未確認
-                  </FieldLabel>
-                </Field>
-                {field(
-                  'confirmedDate',
-                  '最終確認日',
-                  <Input
-                    className="h-10"
-                    type="date"
-                    disabled={unknown}
-                    {...attrs('confirmedDate')}
-                    {...register('confirmedDate')}
-                  />,
-                  '日付は日本時間として保存します。',
-                )}
-              </div>
             </fieldset>
           </ScrollArea>
           <div className="shrink-0 space-y-3 border-t px-5 py-4 sm:px-6">

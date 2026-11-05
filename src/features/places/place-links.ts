@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { doc, getDocFromServer, type Firestore } from 'firebase/firestore'
 import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
 import {
@@ -14,16 +15,20 @@ export type PlaceLinks = Record<string, Store | null>
 export async function readPlaceLinks(
   db: Firestore,
   placeIds: string[],
+  signal?: AbortSignal,
 ): Promise<PlaceLinks> {
   const entries = await Promise.all(
     [...new Set(placeIds)].map(async (id) => {
+      signal?.throwIfAborted()
       googlePlaceIdSchema.parse(id)
       const link = await getDocFromServer(doc(db, 'placeLinks', id))
+      signal?.throwIfAborted()
       if (!link.exists()) return [id, null] as const
       const storeId: unknown = link.data().storeId
       if (typeof storeId !== 'string' || !storeId || storeId.includes('/'))
         throw new Error('Invalid place link')
       const snapshot = await getDocFromServer(doc(db, 'stores', storeId))
+      signal?.throwIfAborted()
       const result = storeDocumentSchema.safeParse(snapshot.data())
       if (
         !snapshot.exists() ||
@@ -37,22 +42,44 @@ export async function readPlaceLinks(
   return Object.fromEntries(entries)
 }
 
-export async function fetchLocalPlaceLinks(placeIds: string[]) {
+export async function fetchLocalPlaceLinks(
+  placeIds: string[],
+  signal?: AbortSignal,
+) {
   if (!usesFirebaseEmulators)
     throw new Error('Place links require local emulator')
-  return readPlaceLinks(getFirebaseServices().db, placeIds)
+  return readPlaceLinks(getFirebaseServices().db, placeIds, signal)
 }
 
-export function usePlaceLinks(places: ConveniencePlace[], requestId = 0) {
+export function usePlaceLinks(
+  places: ConveniencePlace[],
+  requestId = 0,
+  suspended = false,
+) {
+  const client = useQueryClient()
   const ids = places.map((place) => place.id).sort()
+  const idsKey = JSON.stringify(ids)
   const query = useQuery({
     // 同じ候補が返る再検索でも、以前の「未登録」を再利用せず照会する。
     queryKey: ['placeLinks', 'emulator', 'demo-toilet-map', requestId, ids],
-    queryFn: () => fetchLocalPlaceLinks(ids),
-    enabled: usesFirebaseEmulators && ids.length > 0,
-    staleTime: 0,
+    queryFn: ({ signal }) => fetchLocalPlaceLinks(ids, signal),
+    enabled: usesFirebaseEmulators && ids.length > 0 && !suspended,
+    staleTime: Infinity,
     gcTime: 0,
     refetchOnMount: 'always',
   })
+  useEffect(() => {
+    if (suspended)
+      void client.cancelQueries({
+        queryKey: [
+          'placeLinks',
+          'emulator',
+          'demo-toilet-map',
+          requestId,
+          JSON.parse(idsKey),
+        ],
+        exact: true,
+      })
+  }, [client, requestId, idsKey, suspended])
   return { ...query, enabled: usesFirebaseEmulators && ids.length > 0 }
 }

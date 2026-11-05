@@ -5,6 +5,7 @@ import {
   formatEquipmentCount,
   parseStoreDocuments,
   storeDocumentSchema,
+  storeInputSchema,
 } from './store-schema'
 import { getSeedTarget } from '../../../scripts/lib/seed-target'
 
@@ -14,8 +15,7 @@ const data = samples[0].data
 describe('店舗データの検証', () => {
   it('テスト用店舗6件で全状態と設備の構成を確認できる', () => {
     expect(new Set(samples.map((s) => s.id)).size).toBe(6)
-    expect(new Set(samples.map((s) => s.data.availability)).size).toBe(5)
-    expect(new Set(samples.map((s) => s.data.genderLayout)).size).toBe(4)
+    expect(new Set(samples.map((s) => s.data.availability)).size).toBe(2)
     expect(samples.every((s) => s.data.googlePlaceId && !s.data.isSample)).toBe(
       true,
     )
@@ -46,9 +46,50 @@ describe('店舗データの検証', () => {
       )
     }
     expect(
-      storeDocumentSchema.safeParse({ ...data, lastConfirmedAt: 'yesterday' })
+      storeDocumentSchema.safeParse({ ...data, updatedAt: 'yesterday' })
         .success,
     ).toBe(false)
+  })
+
+  it('廃止した状態・項目と利用不可の設備数を拒否する', () => {
+    for (const availability of [
+      'conditional',
+      'temporarily_unavailable',
+      'unknown',
+    ])
+      expect(
+        storeDocumentSchema.safeParse({ ...data, availability }).success,
+      ).toBe(false)
+    for (const removed of [
+      { genderLayout: 'shared' },
+      { lastConfirmedAt: null },
+      { conditions: '' },
+    ])
+      expect(
+        storeDocumentSchema.safeParse({ ...data, ...removed }).success,
+      ).toBe(false)
+
+    const unavailable = {
+      ...data,
+      availability: 'unavailable',
+      stalls: { male: null, female: null, shared: null },
+      urinals: null,
+    }
+    expect(storeDocumentSchema.safeParse(unavailable).success).toBe(true)
+    for (const change of [
+      { stalls: { ...unavailable.stalls, male: 0 } },
+      { stalls: { ...unavailable.stalls, female: 1 } },
+      { stalls: { ...unavailable.stalls, shared: 2 } },
+      { urinals: 0 },
+      { urinals: 1 },
+    ]) {
+      expect(
+        storeDocumentSchema.safeParse({ ...unavailable, ...change }).success,
+      ).toBe(false)
+      expect(
+        storeInputSchema.safeParse({ ...unavailable, ...change }).success,
+      ).toBe(false)
+    }
   })
 
   it('空データと不正データを区別し、101件目で上限を判定する', () => {

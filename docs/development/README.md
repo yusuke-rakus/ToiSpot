@@ -57,22 +57,22 @@ Rules・インデックス・Docker用設定は読み取り専用でマウント
 
 ## 検証コマンド
 
-| コマンド                 | 内容                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `pnpm docs:dependencies` | 導入済みの直接依存からバージョン一覧を再生成                                   |
+| コマンド                 | 内容                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `pnpm docs:dependencies` | 導入済みの直接依存からバージョン一覧を再生成                                      |
 | `pnpm seed`              | 万願寺周辺のテスト店舗7件・紐付けの不足分と、指定された管理者設定をローカルへ投入 |
-| `pnpm stores:cleanup`    | Place IDのない旧店舗と架空サンプルの件数確認（`--apply`で削除）                |
-| `pnpm docs:check`        | 文書リンク、見出し階層、要件・未決事項IDを検証                                 |
-| `pnpm typecheck`         | TypeScriptの型検査                                                             |
-| `pnpm lint`              | ESLintによる検査                                                               |
-| `pnpm test`              | Vitestの単体・画面テスト用プロジェクト                                         |
-| `pnpm build`             | 型検査と本番用ビルド                                                           |
-| `pnpm check`             | 文書・型・lint・単体テスト・ビルドをまとめて実行                               |
-| `pnpm format:check`      | Prettierの書式確認                                                             |
-| `pnpm format`            | Prettierで整形                                                                 |
-| `pnpm test:e2e`          | PC・モバイルサイズでPlaywrightを実行                                           |
-| `pnpm test:rules`        | ホストのJavaでAuth・Firestore Emulatorを起動し、認証・権限テストを実行して終了 |
-| `pnpm test:rules:docker` | 起動済みDockerのFirestoreに接続して権限テストを実行                            |
+| `pnpm stores:cleanup`    | Place IDのない旧店舗と架空サンプルの件数確認（`--apply`で削除）                   |
+| `pnpm docs:check`        | 文書リンク、見出し階層、要件・未決事項IDを検証                                    |
+| `pnpm typecheck`         | TypeScriptの型検査                                                                |
+| `pnpm lint`              | ESLintによる検査                                                                  |
+| `pnpm test`              | Vitestの単体・画面テスト用プロジェクト                                            |
+| `pnpm build`             | 型検査と本番用ビルド                                                              |
+| `pnpm check`             | 文書・型・lint・単体テスト・ビルドをまとめて実行                                  |
+| `pnpm format:check`      | Prettierの書式確認                                                                |
+| `pnpm format`            | Prettierで整形                                                                    |
+| `pnpm test:e2e`          | PC・モバイルサイズでPlaywrightを実行                                              |
+| `pnpm test:rules`        | ホストのJavaでAuth・Firestore Emulatorを起動し、認証・権限テストを実行して終了    |
+| `pnpm test:rules:docker` | 起動済みDockerのFirestoreに接続して権限テストを実行                               |
 
 ブラウザテストの初回のみ実行する。
 
@@ -96,20 +96,20 @@ pnpm test:rules
 
 ## ソースの役割
 
-| 場所                                    | 役割                                                       |
-| --------------------------------------- | ---------------------------------------------------------- |
-| `src/main.tsx`・`src/app.tsx`           | React、Query、Routerの起動                                 |
-| `src/router.tsx`                        | 地図画面、404、型付きルート。自動プリロードは無効          |
-| `src/lib/query-client.ts`               | 自動再取得・再試行を抑えたQuery設定                        |
-| `src/lib/firebase.ts`                   | 遅延初期化、環境変数検証、Emulator接続                     |
-| `src/components/ui/`・`components.json` | shadcn/uiのコンポーネントと設定                            |
-| `src/index.css`                         | Tailwind CSS、共通UIトークン                               |
-| `tests/`                                | 検証のセットアップ、ブラウザテスト、権限テスト             |
-| `firestore.rules`                       | 公開読み取りとGoogle管理者の作成・更新を許可し、入力も検証 |
-| `src/features/auth/`                    | セッション準備・模擬Googleログイン・管理者判定・ログアウト |
-| `src/features/stores/`                  | 共有スキーマ・取得・Query・一覧・詳細・店舗ピン            |
+| 場所                                    | 役割                                                           |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `src/main.tsx`・`src/app.tsx`           | React、Query、Routerの起動                                     |
+| `src/router.tsx`                        | 地図画面、404、型付きルート。自動プリロードは無効              |
+| `src/lib/query-client.ts`               | 自動再取得・再試行を抑えたQuery設定                            |
+| `src/lib/firebase.ts`                   | 遅延初期化、環境変数検証、Emulator接続                         |
+| `src/components/ui/`・`components.json` | shadcn/uiのコンポーネントと設定                                |
+| `src/index.css`                         | Tailwind CSS、共通UIトークン                                   |
+| `tests/`                                | 検証のセットアップ、ブラウザテスト、権限テスト                 |
+| `firestore.rules`                       | 公開読み取りとGoogle管理者の作成・更新を許可し、入力も検証     |
+| `src/features/auth/`                    | セッション準備・模擬Googleログイン・管理者判定・ログアウト     |
+| `src/features/stores/`                  | 共有スキーマ・取得・Query・一覧・詳細・店舗ピン                |
 | `scripts/seed.ts`・`scripts/lib/`       | ローカル限定のテスト店舗・紐付け・管理者設定の投入と旧店舗整理 |
-| `scripts/data/stores.json`             | 万願寺周辺のテスト店舗7件の保存データ                       |
+| `scripts/data/stores.json`              | 万願寺周辺のテスト店舗7件の保存データ                          |
 
 ## 実装済みと接続待ち
 

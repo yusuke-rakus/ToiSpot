@@ -14,7 +14,7 @@ QueryはFirebaseの代替ではなく、取得結果をReact画面で扱うた�
 
 標準設定では、古くなったデータがマウント・画面復帰・再接続時に自動取得され、失敗時の再試行も行われる。無料枠を意識し、店舗データの初期設定案は `staleTime: 5分`、`gcTime: 15分`、`refetchOnMount: false`、`refetchOnWindowFocus: false`、`refetchOnReconnect: false`、`retry: false`、定期取得なしとする。保存操作も自動再試行せず、失敗を明示する。値は鮮度要件と実測で調整する。
 
-同じ条件での「再検索」は明示的に再取得できるようにする。キャッシュ済みであることと、店舗の現地確認日が新しいことは別の情報として扱う。
+同じ条件での「再検索」は明示的に再取得できるようにする。キャッシュ済みであることは、店舗の設備情報が最新であることを保証しない。
 
 出典：[TanStack Queryの標準動作](https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults)。
 

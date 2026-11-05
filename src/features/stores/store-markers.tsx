@@ -1,4 +1,5 @@
-import { AdvancedMarker, Pin } from '@vis.gl/react-google-maps'
+import { AdvancedMarker } from '@vis.gl/react-google-maps'
+import { MapMarkerPin } from '../map/map-marker-pin'
 import { availabilityLabels, type Store } from './store-schema'
 
 export function StoreMarkers({
@@ -18,12 +19,7 @@ export function StoreMarkers({
       onClick={() => onSelect(store.id)}
       zIndex={store.id === selectedId ? 10 : 1}
     >
-      <Pin
-        scale={store.id === selectedId ? 1.3 : 1}
-        background={store.id === selectedId ? '#0f172b' : '#ffffff'}
-        borderColor="#0f172b"
-        glyphColor={store.id === selectedId ? '#ffffff' : '#0f172b'}
-      />
+      <MapMarkerPin selected={store.id === selectedId} registered />
     </AdvancedMarker>
   ))
 }

@@ -1,6 +1,26 @@
 export type MapPoint = { lat: number; lng: number }
 
-export type MapConfig = { apiKey: string; mapId: string }
+export type PlacesConfig = {
+  autoSearch: boolean
+  expandedSearch: boolean
+  minZoom: number
+  maxResults: number
+  maxRequests: number
+}
+
+export const DEFAULT_PLACES_CONFIG: PlacesConfig = {
+  autoSearch: false,
+  expandedSearch: true,
+  minZoom: 13,
+  maxResults: 100,
+  maxRequests: 9,
+}
+
+export type MapConfig = {
+  apiKey: string
+  mapId: string
+  places?: PlacesConfig
+}
 
 // 現在地の取得前・拒否・失敗時は東京駅周辺を表示する。
 export const INITIAL_CENTER: MapPoint = { lat: 35.681236, lng: 139.767125 }
@@ -16,7 +36,34 @@ export function getMapConfig(env: Record<string, unknown>): MapConfig {
       (typeof env.VITE_GOOGLE_MAPS_MAP_ID === 'string'
         ? env.VITE_GOOGLE_MAPS_MAP_ID.trim()
         : '') || 'DEMO_MAP_ID',
+    places: {
+      autoSearch: booleanSetting(env.VITE_PLACES_AUTO_SEARCH, false),
+      expandedSearch: booleanSetting(env.VITE_PLACES_EXPANDED_SEARCH, true),
+      minZoom: integerSetting(env.VITE_PLACES_MIN_ZOOM, 13, 0, 22),
+      maxResults: integerSetting(env.VITE_PLACES_MAX_RESULTS, 100, 1),
+      maxRequests: integerSetting(env.VITE_PLACES_MAX_REQUESTS, 9, 1),
+    },
   }
+}
+
+function booleanSetting(value: unknown, fallback: boolean) {
+  if (typeof value !== 'string') return fallback
+  if (value.trim() === 'true') return true
+  if (value.trim() === 'false') return false
+  return fallback
+}
+
+function integerSetting(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max = Number.MAX_SAFE_INTEGER,
+) {
+  if (typeof value !== 'string' || value.trim() === '') return fallback
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max
+    ? parsed
+    : fallback
 }
 
 export function locationErrorMessage(code: number): string {

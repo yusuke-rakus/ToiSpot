@@ -1,7 +1,12 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { INITIAL_CENTER } from '../map/map-config'
-import { searchConveniencePlaces, useNearbyPlaces } from './nearby-places'
+import { DEFAULT_PLACES_CONFIG, INITIAL_CENTER } from '../map/map-config'
+import type { MapViewport } from '../map/search-area'
+import {
+  searchConveniencePlaces,
+  searchViewportPlaces,
+  useNearbyPlaces,
+} from './nearby-places'
 
 const nearby = vi.fn()
 const place = (id = 'ChIJ_test') => ({
@@ -11,6 +16,11 @@ const place = (id = 'ChIJ_test') => ({
   location: { toJSON: () => INITIAL_CENTER },
   attributions: [],
 })
+const viewport: MapViewport = {
+  center: INITIAL_CENTER,
+  bounds: { north: 35.71, south: 35.65, east: 139.8, west: 139.73 },
+  zoom: 14,
+}
 beforeEach(() => {
   nearby.mockReset().mockResolvedValue({ places: [] })
   vi.stubGlobal('google', {
@@ -19,6 +29,225 @@ beforeEach(() => {
         .fn()
         .mockResolvedValue({ Place: { searchNearby: nearby } }),
     },
+  })
+})
+
+describe('表示範囲の分割検索', () => {
+  it('20件に達した範囲を追加検索し、重複を除いた100件で停止する', async () => {
+    let batch = 0
+    nearby.mockImplementation(async () => {
+      const prefix = batch++
+      return {
+        places: Array.from({ length: 20 }, (_, index) =>
+          place(`ChIJ_${prefix}_${index}`),
+        ),
+      }
+    })
+    const result = await searchViewportPlaces(viewport)
+    expect(result.places).toHaveLength(100)
+    expect(result.limited).toBe(true)
+    expect(nearby).toHaveBeenCalledTimes(5)
+    for (const [request] of nearby.mock.calls) {
+      expect(request.maxResultCount).toBe(20)
+      expect(request.locationRestriction.radius).toBeLessThanOrEqual(50_000)
+    }
+  })
+  it('密集・重複した結果でも親を含めて9要求までに制限する', async () => {
+    nearby.mockResolvedValue({
+      places: Array.from({ length: 20 }, (_, index) => place(`ChIJ_${index}`)),
+    })
+    const result = await searchViewportPlaces(viewport)
+    expect(nearby).toHaveBeenCalledTimes(9)
+    expect(result.places).toHaveLength(20)
+    expect(result.limited).toBe(true)
+  })
+  it('分割無効では表示範囲の1要求・最大20件に制限する', async () => {
+    nearby.mockResolvedValue({
+      places: Array.from({ length: 20 }, (_, index) => place(`ChIJ_${index}`)),
+    })
+    const result = await searchViewportPlaces(viewport, {
+      ...DEFAULT_PLACES_CONFIG,
+      expandedSearch: false,
+    })
+    expect(nearby).toHaveBeenCalledOnce()
+    expect(result.places).toHaveLength(20)
+    expect(nearby.mock.calls[0][0].locationRestriction.radius).not.toBe(3000)
+  })
+  it('設定した件数・要求数を超えない', async () => {
+    nearby.mockResolvedValue({
+      places: Array.from({ length: 20 }, (_, index) => place(`ChIJ_${index}`)),
+    })
+    expect(
+      (
+        await searchViewportPlaces(viewport, {
+          ...DEFAULT_PLACES_CONFIG,
+          maxResults: 7,
+        })
+      ).places,
+    ).toHaveLength(7)
+    expect(nearby).toHaveBeenCalledOnce()
+    nearby.mockClear()
+    await searchViewportPlaces(viewport, {
+      ...DEFAULT_PLACES_CONFIG,
+      maxRequests: 2,
+    })
+    expect(nearby).toHaveBeenCalledTimes(2)
+  })
+  it('表示範囲外・不正データ・重複を除外して中心から近い順にする', async () => {
+    nearby.mockResolvedValue({
+      places: [
+        {
+          ...place('far'),
+          location: { toJSON: () => ({ lat: 35.7, lng: 139.79 }) },
+        },
+        place('near'),
+        place('near'),
+        place('invalid/id'),
+        {
+          ...place('outside'),
+          location: { toJSON: () => ({ lat: 36, lng: 140 }) },
+        },
+      ],
+    })
+    const result = await searchViewportPlaces(viewport)
+    expect(result.places.map(({ id }) => id)).toEqual(['near', 'far'])
+    expect(result.limited).toBe(false)
+  })
+  it('一部失敗は取得できた店舗と区別して返し、全失敗はエラーにする', async () => {
+    nearby
+      .mockResolvedValueOnce({
+        places: Array.from({ length: 20 }, (_, i) => place(`ChIJ_${i}`)),
+      })
+      .mockRejectedValueOnce(new Error('private error'))
+      .mockResolvedValue({ places: [place('other')] })
+    const result = await searchViewportPlaces(viewport)
+    expect(result.places).toHaveLength(21)
+    expect(result.partialError).toBe(true)
+    expect(nearby).toHaveBeenCalledTimes(5)
+    nearby.mockRejectedValue(new Error('private error'))
+    await expect(searchViewportPlaces(viewport)).rejects.toThrow(
+      'Places search failed',
+    )
+  })
+  it('50kmを超える表示範囲は先に分割し、要求上限で打ち切る', async () => {
+    const result = await searchViewportPlaces(
+      { ...viewport, bounds: { north: 40, south: 30, east: 145, west: 130 } },
+      { ...DEFAULT_PLACES_CONFIG, maxRequests: 3 },
+    )
+    expect(nearby).toHaveBeenCalledTimes(3)
+    expect(result.limited).toBe(true)
+    for (const [request] of nearby.mock.calls)
+      expect(request.locationRestriction.radius).toBeLessThanOrEqual(50_000)
+  })
+  it('空の表示範囲ではAPIを呼ばない', async () => {
+    await expect(
+      searchViewportPlaces({
+        ...viewport,
+        bounds: { ...viewport.bounds, north: viewport.bounds.south },
+      }),
+    ).rejects.toThrow('Invalid search viewport')
+    expect(nearby).not.toHaveBeenCalled()
+  })
+})
+
+describe('自動検索の世代と表示維持', () => {
+  it('再取得中と失敗時に前回結果・登録照会の世代を維持する', async () => {
+    nearby.mockResolvedValueOnce({ places: [place('previous')] })
+    const { result } = renderHook(() => useNearbyPlaces())
+    await act(async () => {
+      await result.current.search(viewport)
+    })
+    const requestId = result.current.requestId
+    let fail!: (error: Error) => void
+    nearby.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject
+        }),
+    )
+    let pending!: Promise<void>
+    await act(async () => {
+      pending = result.current.search(viewport)
+    })
+    expect(result.current.status).toBe('loading')
+    expect(result.current.places[0].id).toBe('previous')
+    expect(result.current.requestId).toBe(requestId)
+    await act(async () => {
+      fail(new Error('private error'))
+      await pending
+    })
+    expect(result.current.status).toBe('error')
+    expect(result.current.places[0].id).toBe('previous')
+    expect(result.current.requestId).toBe(requestId)
+  })
+  it('縮小停止後の応答から分割要求を増やさず、前回表示へ戻す', async () => {
+    nearby.mockResolvedValueOnce({ places: [place('previous')] })
+    const { result } = renderHook(() => useNearbyPlaces())
+    await act(async () => {
+      await result.current.search(viewport)
+    })
+    let finish!: (value: { places: ReturnType<typeof place>[] }) => void
+    nearby.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    let pending!: Promise<void>
+    await act(async () => {
+      pending = result.current.search(viewport)
+    })
+    await act(async () => {
+      result.current.cancel()
+      await pending
+    })
+    await act(async () => {
+      finish({
+        places: Array.from({ length: 20 }, (_, i) => place(`old_${i}`)),
+      })
+    })
+    expect(nearby).toHaveBeenCalledTimes(2)
+    expect(result.current.status).toBe('success')
+    expect(result.current.places[0].id).toBe('previous')
+  })
+  it('送信済みの古い通信を含め同時2要求を守り、空き枠では最新検索を送る', async () => {
+    nearby.mockResolvedValueOnce({
+      places: Array.from({ length: 20 }, (_, i) => place(`old_${i}`)),
+    })
+    const pendingResponses: ((value: {
+      places: ReturnType<typeof place>[]
+    }) => void)[] = []
+    nearby
+      .mockImplementationOnce(
+        () => new Promise((resolve) => pendingResponses.push(resolve)),
+      )
+      .mockImplementationOnce(
+        () => new Promise((resolve) => pendingResponses.push(resolve)),
+      )
+      .mockResolvedValue({ places: [place('latest')] })
+    const { result } = renderHook(() => useNearbyPlaces())
+    let old!: Promise<void>
+    await act(async () => {
+      old = result.current.search(viewport)
+    })
+    await waitFor(() => expect(nearby).toHaveBeenCalledTimes(3))
+    let latest!: Promise<void>
+    await act(async () => {
+      latest = result.current.search({ ...viewport, zoom: 15 })
+      await old
+    })
+    expect(nearby).toHaveBeenCalledTimes(3)
+    await act(async () => {
+      pendingResponses[0]({ places: [] })
+      await latest
+    })
+    expect(nearby).toHaveBeenCalledTimes(4)
+    expect(result.current.places[0].id).toBe('latest')
+    await act(async () => {
+      pendingResponses[1]({ places: [place('obsolete')] })
+    })
+    expect(result.current.places[0].id).toBe('latest')
+    expect(nearby).toHaveBeenCalledTimes(4)
   })
 })
 afterEach(() => vi.unstubAllGlobals())

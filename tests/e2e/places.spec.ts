@@ -34,7 +34,7 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
-      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
+      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 100, maxRequests: 9 }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
     }),
   )
   await page.route('**/src/features/stores/use-stores.ts', (route) =>
@@ -86,14 +86,33 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   await page.goto('/')
   const pin = page.getByRole('button', { name: '未調査のコンビニ・データなし' })
   await expect(pin).toBeVisible()
-  await expect(pin.locator('path')).toHaveAttribute('fill', '#9ca3af')
+  await expect(pin.locator('svg')).toHaveCSS('color', 'rgb(156, 163, 175)')
   await expect(
     page.getByRole('list', { name: '周辺店舗一覧' }).locator('li'),
   ).toHaveCount(2)
   await pin.click()
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await expect(page.getByText('Googleから取得した住所')).toBeVisible()
-  await expect(pin.locator('path')).toHaveAttribute('fill', '#9ca3af')
+  const rose600 = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--color-rose-600)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  })
+  await expect(pin.locator('svg')).toHaveCSS('color', rose600)
+  await expect(pin.locator('svg')).toHaveCSS(
+    'transform',
+    'matrix(1.3, 0, 0, 1.3, 0, 0)',
+  )
+  await expect(pin.locator('svg')).toHaveCSS(
+    'transition-property',
+    'transform, color',
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(pin.locator('svg')).toHaveCSS('transition-property', 'none')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await expect(
     page.getByRole('button', { name: 'トイレ情報を登録' }),
   ).toHaveCount(0)
@@ -136,6 +155,31 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true)
+  await expect(pin.locator('svg')).toHaveCSS('color', 'rgb(156, 163, 175)')
+  await expect(pin.locator('svg')).toHaveCSS(
+    'transform',
+    'matrix(1, 0, 0, 1, 0, 0)',
+  )
+  await page
+    .getByRole('button', { name: '確認済みコンビニの詳細を見る' })
+    .click()
+  const registeredPin = page.getByRole('button', {
+    name: '確認済みコンビニ・利用可',
+  })
+  await expect(registeredPin.locator('svg')).toHaveCSS('color', rose600)
+  await expect(registeredPin.locator('svg')).toHaveCSS(
+    'transform',
+    'matrix(1.3, 0, 0, 1.3, 0, 0)',
+  )
+  await page.getByRole('button', { name: '一覧へ戻る' }).click()
+  await expect(registeredPin.locator('svg')).toHaveCSS(
+    'color',
+    'rgb(255, 255, 255)',
+  )
+  await expect(registeredPin.locator('svg')).toHaveCSS(
+    'transform',
+    'matrix(1, 0, 0, 1, 0, 0)',
+  )
   expect(externalRequests).toEqual([])
 })
 
