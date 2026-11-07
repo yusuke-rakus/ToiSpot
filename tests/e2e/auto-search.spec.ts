@@ -91,10 +91,16 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   page,
 }, testInfo) => {
   const externalRequests = await setup(page, true)
+  const mobile = testInfo.project.name === 'mobile'
   const list = page.getByRole('list', { name: '周辺店舗一覧' })
-  await expect(list.locator('li')).toHaveCount(100)
+  const pins = page.getByRole('button', { name: /・データなし$/ })
+  const results = mobile ? pins : list.locator('li')
+  const sheet = page.getByRole('dialog', { name: 'トイレ情報' })
+  await expect(results).toHaveCount(100)
   expect(await callCount(page)).toBe(5)
-  await expect(page.getByText('地図の表示範囲・中心から近い順')).toBeVisible()
+  if (!mobile) {
+    await expect(page.getByText('地図の表示範囲・中心から近い順')).toBeVisible()
+  }
   const initialRadius = await page.evaluate(
     () =>
       (window as unknown as { nearbyCalls: { radius: number }[] })
@@ -102,14 +108,15 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   )
   await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   await expect.poll(() => callCount(page)).toBe(10)
-  await expect(list.locator('li')).toHaveCount(100)
+  await expect(results).toHaveCount(100)
   const movedRadius = await page.evaluate(
     () =>
       (window as unknown as { nearbyCalls: { radius: number }[] })
         .nearbyCalls[5].radius,
   )
   expect(movedRadius).toBeLessThan(initialRadius)
-  await list.getByRole('button').first().click()
+  if (mobile) await pins.last().click()
+  else await list.getByRole('button').first().click()
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await page.getByRole('button', { name: /テーマを変更/ }).click()
   await page.getByRole('menuitemradio', { name: 'ダーク' }).click()
@@ -120,9 +127,11 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   await expect(
     page.getByRole('button', { name: 'この周辺を検索' }),
   ).toHaveCount(0)
-  await expect(
-    page.getByRole('button', { name: '店舗情報を更新' }),
-  ).toBeDisabled()
+  if (!mobile) {
+    await expect(
+      page.getByRole('button', { name: '店舗情報を更新' }),
+    ).toBeDisabled()
+  }
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await page.waitForTimeout(400)
   expect(await callCount(page)).toBe(10)
@@ -136,7 +145,8 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   await expect(page.getByText('地図を拡大すると検索を再開します')).toHaveCount(
     0,
   )
-  await expect(list.locator('li')).toHaveCount(100)
+  await expect(results).toHaveCount(100)
+  if (mobile) await expect(sheet).toHaveCount(0)
   const sameArea = await page.evaluate(() => {
     const state = window as unknown as {
       storeArea: { center: { lat: number; lng: number }; zoom: number }
@@ -158,14 +168,19 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   expect(externalRequests).toEqual([])
 })
 
-test('自動取得を有効にしたまま分割取得だけ無効化できる', async ({ page }) => {
+test('自動取得を有効にしたまま分割取得だけ無効化できる', async ({
+  page,
+}, testInfo) => {
   const externalRequests = await setup(page, false)
-  const list = page.getByRole('list', { name: '周辺店舗一覧' })
-  await expect(list.locator('li')).toHaveCount(20)
+  const results =
+    testInfo.project.name === 'mobile'
+      ? page.getByRole('button', { name: /・データなし$/ })
+      : page.getByRole('list', { name: '周辺店舗一覧' }).locator('li')
+  await expect(results).toHaveCount(20)
   expect(await callCount(page)).toBe(1)
   await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   await expect.poll(() => callCount(page)).toBe(2)
-  await expect(list.locator('li')).toHaveCount(20)
+  await expect(results).toHaveCount(20)
   await expect(
     page.getByRole('button', { name: 'この周辺を検索' }),
   ).toHaveCount(0)

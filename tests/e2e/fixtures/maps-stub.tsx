@@ -102,7 +102,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          bottom: 64,
+          top: 128,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',
@@ -121,7 +121,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          bottom: 104,
+          top: 168,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',
@@ -138,7 +138,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          bottom: 144,
+          top: 208,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',

@@ -110,6 +110,128 @@ export function StorePanel({
         <p className="mb-4 text-xs text-muted-foreground">{areaLabel}</p>
       )}
 
+      <StorePanelFeedback
+        query={query}
+        entries={entries}
+        placesStatus={placesStatus}
+        registrationError={registrationError}
+        onRetryPlaces={onRetryPlaces}
+        searchPaused={searchPaused}
+        searchSuspended={searchSuspended}
+        viewportSearch={viewportSearch}
+        placesLimited={placesLimited}
+        placesPartialError={placesPartialError}
+      />
+
+      {pointContent ? (
+        <>
+          <BackButton onClick={onBack} />
+          {pointContent}
+        </>
+      ) : selectedStore ? (
+        <>
+          <BackButton onClick={onBack} />
+          <SelectedStoreDetails store={selectedStore} onEdit={onEdit} />
+        </>
+      ) : entries.length > 0 ? (
+        <ul
+          aria-label="周辺店舗一覧"
+          className="-mx-5 divide-y border-y sm:-mx-7"
+        >
+          {entries.map((entry) => {
+            const store = entry.store
+            return (
+              <li key={entry.key}>
+                <Item asChild className="rounded-none border-0 p-0">
+                  <button
+                    type="button"
+                    className="group w-full px-5 py-4 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
+                    onClick={() =>
+                      store
+                        ? onSelectStore(store.id)
+                        : onSelectPlace(entry.place!.id)
+                    }
+                    aria-label={`${entry.name}の詳細を見る`}
+                  >
+                    <ItemContent>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <ItemDescription className="text-[11px]">
+                          {store ? store.chainName : 'Google Maps の店舗情報'}
+                        </ItemDescription>
+                        {store ? (
+                          <AvailabilityBadge store={store} />
+                        ) : (
+                          <Badge variant="secondary" className="text-[11px]">
+                            {registrationLabels[entry.registration]}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <ItemTitle className="text-sm leading-6">
+                          <h3>{entry.name}</h3>
+                        </ItemTitle>
+                        <ItemActions>
+                          <ArrowUpRight
+                            className="mt-1 size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </ItemActions>
+                      </div>
+                    </ItemContent>
+                  </button>
+                </Item>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        result && (
+          <Empty role="status" className="px-0">
+            <EmptyDescription>
+              {result.invalidCount
+                ? '表示できる店舗情報がありません。'
+                : result.truncated
+                  ? '取得した候補に表示できる店舗がありません。'
+                  : areaLabel
+                    ? viewportSearch
+                      ? '地図の表示範囲内に登録された店舗はありません。'
+                      : '半径3km以内に登録された店舗はありません。'
+                    : '登録された店舗はありません。'}
+            </EmptyDescription>
+          </Empty>
+        )
+      )}
+    </>
+  )
+}
+
+export function StorePanelFeedback({
+  query,
+  entries,
+  placesStatus,
+  registrationError,
+  onRetryPlaces,
+  searchPaused = false,
+  searchSuspended = false,
+  viewportSearch = false,
+  placesLimited = false,
+  placesPartialError = false,
+}: Pick<
+  Props,
+  | 'query'
+  | 'entries'
+  | 'placesStatus'
+  | 'registrationError'
+  | 'onRetryPlaces'
+  | 'searchPaused'
+  | 'searchSuspended'
+  | 'viewportSearch'
+  | 'placesLimited'
+  | 'placesPartialError'
+>) {
+  const result = query.data
+  return (
+    <>
       {!query.enabled && <Notice>登録情報を利用できません。</Notice>}
       {searchPaused && <Notice>地図を拡大すると検索を再開します</Notice>}
       {query.enabled && query.isPending && !searchSuspended && (
@@ -203,90 +325,25 @@ export function StorePanel({
           </AlertDescription>
         </Alert>
       )}
+    </>
+  )
+}
 
-      {pointContent ? (
-        <>
-          <BackButton onClick={onBack} />
-          {pointContent}
-        </>
-      ) : selectedStore ? (
-        <>
-          <BackButton onClick={onBack} />
-          {onEdit && (
-            <Button variant="outline" className="mb-5 w-full" onClick={onEdit}>
-              店舗を編集
-            </Button>
-          )}
-          <StoreDetails store={selectedStore} />
-        </>
-      ) : entries.length > 0 ? (
-        <ul
-          aria-label="周辺店舗一覧"
-          className="-mx-5 divide-y border-y sm:-mx-7"
-        >
-          {entries.map((entry) => {
-            const store = entry.store
-            return (
-              <li key={entry.key}>
-                <Item asChild className="rounded-none border-0 p-0">
-                  <button
-                    type="button"
-                    className="group w-full px-5 py-4 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
-                    onClick={() =>
-                      store
-                        ? onSelectStore(store.id)
-                        : onSelectPlace(entry.place!.id)
-                    }
-                    aria-label={`${entry.name}の詳細を見る`}
-                  >
-                    <ItemContent>
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <ItemDescription className="text-[11px]">
-                          {store ? store.chainName : 'Google Maps の店舗情報'}
-                        </ItemDescription>
-                        {store ? (
-                          <AvailabilityBadge store={store} />
-                        ) : (
-                          <Badge variant="secondary" className="text-[11px]">
-                            {registrationLabels[entry.registration]}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <ItemTitle className="text-sm leading-6">
-                          <h3>{entry.name}</h3>
-                        </ItemTitle>
-                        <ItemActions>
-                          <ArrowUpRight
-                            className="mt-1 size-4 shrink-0 text-muted-foreground"
-                            aria-hidden="true"
-                          />
-                        </ItemActions>
-                      </div>
-                    </ItemContent>
-                  </button>
-                </Item>
-              </li>
-            )
-          })}
-        </ul>
-      ) : (
-        result && (
-          <Empty role="status" className="px-0">
-            <EmptyDescription>
-              {result.invalidCount
-                ? '表示できる店舗情報がありません。'
-                : result.truncated
-                  ? '取得した候補に表示できる店舗がありません。'
-                  : areaLabel
-                    ? viewportSearch
-                      ? '地図の表示範囲内に登録された店舗はありません。'
-                      : '半径3km以内に登録された店舗はありません。'
-                    : '登録された店舗はありません。'}
-            </EmptyDescription>
-          </Empty>
-        )
+export function SelectedStoreDetails({
+  store,
+  onEdit,
+}: {
+  store: Store
+  onEdit?: () => void
+}) {
+  return (
+    <>
+      {onEdit && (
+        <Button variant="outline" className="mb-5 w-full" onClick={onEdit}>
+          店舗を編集
+        </Button>
       )}
+      <StoreDetails store={store} />
     </>
   )
 }

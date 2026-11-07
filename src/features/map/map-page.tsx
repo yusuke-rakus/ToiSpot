@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import {
   AdvancedMarker,
   APILoadingStatus,
@@ -11,6 +18,7 @@ import {
 import { CircleAlert, LocateFixed, MapPin, RotateCcw, X } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Alert, AlertDescription, AlertAction } from '@/components/ui/alert'
 import {
   Empty,
@@ -25,7 +33,11 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { useTheme } from '@/components/theme-provider'
 import { firebaseConnection, usesFirebaseEmulators } from '@/lib/firebase'
 import { useStores } from '@/features/stores/use-stores'
-import { StorePanel } from '@/features/stores/store-panel'
+import {
+  SelectedStoreDetails,
+  StorePanel,
+  StorePanelFeedback,
+} from '@/features/stores/store-panel'
 import { StoreMarkers } from '@/features/stores/store-markers'
 import type { Store } from '@/features/stores/store-schema'
 import { useAdmin } from '@/features/auth/admin-provider'
@@ -60,6 +72,18 @@ import { PlaceMarkers } from '../places/place-markers'
 
 const configFromEnv = getMapConfig(import.meta.env)
 const libraries = ['marker']
+// Tailwind の lg と同じ境界で、デスクトップではポータルを開かない。
+const mobileQuery = '(width < 64rem)'
+
+function subscribeToMobileLayout(onChange: () => void) {
+  const media = window.matchMedia?.(mobileQuery)
+  media?.addEventListener('change', onChange)
+  return () => media?.removeEventListener('change', onChange)
+}
+
+function isMobileLayout() {
+  return window.matchMedia?.(mobileQuery).matches ?? false
+}
 
 export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   const placesConfig = config.places ?? DEFAULT_PLACES_CONFIG
@@ -84,6 +108,8 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   } | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const sheetTrigger = useRef<HTMLElement | null>(null)
+  const isMobile = useSyncExternalStore(subscribeToMobileLayout, isMobileLayout)
   const [selection, setSelection] = useState<
     { kind: 'store'; id: string } | { kind: 'place'; id: string } | null
   >(null)
@@ -110,6 +136,10 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     selection?.kind === 'store'
       ? (stores.find((store) => store.id === selection.id) ?? null)
       : (selectedEntry?.store ?? null)
+  if (isMobile && selection && !selectedEntry && !selectedStore) {
+    setSelection(null)
+  }
+  const clearSelection = () => setSelection(null)
   const selectPlace = (id: string) => setSelection({ kind: 'place', id })
   const selectStore = (id: string) => setSelection({ kind: 'store', id })
   const search = places.search
@@ -225,9 +255,60 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     }
   }
 
+  const onEdit =
+    admin.status === 'admin' && selectedStore
+      ? () =>
+          setEditor({
+            target: {
+              id: selectedStore.id,
+              googlePlaceId: selectedStore.googlePlaceId,
+              original: selectedStore,
+            },
+          })
+      : undefined
+  const pointContent =
+    selectedEntry?.place && !selectedEntry.store ? (
+      <PlaceDetails
+        key={selectedEntry.key}
+        entry={selectedEntry}
+        canManage={admin.status === 'admin'}
+        onRegister={() => createStore(selectedEntry.place!)}
+      />
+    ) : null
+  const feedbackProps = {
+    query: storesQuery,
+    entries,
+    placesStatus: places.status,
+    searchPaused: zoomPaused,
+    searchSuspended: suspended,
+    viewportSearch: placesConfig.autoSearch,
+    placesLimited: placesConfig.autoSearch && places.limited,
+    placesPartialError: placesConfig.autoSearch && places.partialError,
+    registrationError: links.isError,
+    onRetryPlaces: () => {
+      if (suspended) return
+      if (isViewport(searchTarget)) void search(searchTarget, placesConfig)
+      else void search(searchTarget)
+    },
+  }
+  const notices = (
+    <>
+      {firebaseConnection.error && (
+        <Alert className="mb-4" variant="destructive">
+          <AlertDescription>{firebaseConnection.error}</AlertDescription>
+        </Alert>
+      )}
+      {saveNotice && (
+        <p role="status" className="mb-4 text-sm leading-6 text-primary">
+          {saveNotice}
+        </p>
+      )}
+    </>
+  )
+
   return (
     <div className="flex h-svh min-h-[480px] flex-col bg-background text-foreground">
-      <header className="z-10 flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b bg-background px-4 py-2 sm:px-7">
+      <header className="z-10 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b bg-background px-4 py-1.5 sm:min-h-16 sm:px-7 sm:py-2">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <MapPin className="size-5" aria-hidden="true" />
@@ -258,93 +339,42 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <aside
-          aria-label="店舗と選択した場所の情報"
-          className="order-2 max-h-[42svh] min-h-0 shrink-0 border-t bg-background lg:order-1 lg:max-h-none lg:w-96 lg:border-t-0 lg:border-r"
-        >
-          <ScrollArea
-            viewportRef={panelRef}
-            className="h-full max-lg:[&_[data-slot=scroll-area-viewport]]:max-h-[42svh]"
+        {!isMobile && (
+          <aside
+            aria-label="店舗と選択した場所の情報"
+            className="hidden min-h-0 w-96 shrink-0 border-r bg-background lg:block"
           >
-            <div className="p-5 sm:p-7">
-              {firebaseConnection.error && (
-                <Alert className="mb-4" variant="destructive">
-                  <AlertDescription>
-                    {firebaseConnection.error}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {saveNotice && (
-                <p
-                  role="status"
-                  className="mb-4 text-sm leading-6 text-primary"
-                >
-                  {saveNotice}
-                </p>
-              )}
-              <StorePanel
-                areaLabel={
-                  placesConfig.autoSearch
-                    ? '地図の表示範囲・中心から近い順'
-                    : area === 'location'
-                      ? '現在地から半径3km・近い順'
-                      : area === 'map'
-                        ? '検索した地点から半径3km・近い順'
-                        : '東京駅から半径3km・近い順'
-                }
-                query={storesQuery}
-                entries={entries}
-                placesStatus={places.status}
-                searchPaused={zoomPaused}
-                searchSuspended={suspended}
-                viewportSearch={placesConfig.autoSearch}
-                placesLimited={placesConfig.autoSearch && places.limited}
-                placesPartialError={
-                  placesConfig.autoSearch && places.partialError
-                }
-                onSelectPlace={selectPlace}
-                onRefresh={() => void refreshRegistration()}
-                registrationFetching={links.isFetching}
-                registrationError={links.isError}
-                onRetryPlaces={() => {
-                  if (suspended) return
-                  if (isViewport(searchTarget))
-                    void search(searchTarget, placesConfig)
-                  else void search(searchTarget)
-                }}
-                selectedStore={selectedStore}
-                onSelectStore={selectStore}
-                onBack={() => setSelection(null)}
-                onEdit={
-                  admin.status === 'admin' && selectedStore
-                    ? () =>
-                        setEditor({
-                          target: {
-                            id: selectedStore.id,
-                            googlePlaceId: selectedStore.googlePlaceId,
-                            original: selectedStore,
-                          },
-                        })
-                    : undefined
-                }
-                pointContent={
-                  selectedEntry && !selectedEntry.store ? (
-                    <PlaceDetails
-                      key={selectedEntry.key}
-                      entry={selectedEntry}
-                      canManage={admin.status === 'admin'}
-                      onRegister={() => createStore(selectedEntry.place!)}
-                    />
-                  ) : null
-                }
-              />
-            </div>
-          </ScrollArea>
-        </aside>
+            <ScrollArea viewportRef={panelRef} className="h-full">
+              <div className="p-7">
+                {notices}
+                <StorePanel
+                  {...feedbackProps}
+                  areaLabel={
+                    placesConfig.autoSearch
+                      ? '地図の表示範囲・中心から近い順'
+                      : area === 'location'
+                        ? '現在地から半径3km・近い順'
+                        : area === 'map'
+                          ? '検索した地点から半径3km・近い順'
+                          : '東京駅から半径3km・近い順'
+                  }
+                  onSelectPlace={selectPlace}
+                  onRefresh={() => void refreshRegistration()}
+                  registrationFetching={links.isFetching}
+                  selectedStore={selectedStore}
+                  onSelectStore={selectStore}
+                  onBack={clearSelection}
+                  onEdit={onEdit}
+                  pointContent={pointContent}
+                />
+              </div>
+            </ScrollArea>
+          </aside>
+        )}
 
         <section
           aria-label="地図"
-          className="relative order-1 min-h-[240px] flex-1 overflow-hidden bg-muted lg:order-2"
+          className="relative isolate min-h-[240px] flex-1 overflow-hidden bg-muted"
         >
           {config.apiKey ? (
             <APIProvider
@@ -380,8 +410,73 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
               description=".envにVITE_GOOGLE_MAPS_API_KEYを設定し、開発サーバーを再起動してください。"
             />
           )}
+          {isMobile && (
+            <div
+              className={`absolute right-32 left-3 z-10 grid max-h-[20svh] max-w-xs gap-2 overflow-y-auto overscroll-contain rounded-lg border bg-background/95 p-2 shadow-sm empty:hidden [&>*]:m-0 [&>p]:py-0 ${placesConfig.autoSearch ? 'top-4' : 'top-32'}`}
+            >
+              {notices}
+              <StorePanelFeedback {...feedbackProps} />
+              {(storesQuery.isError || links.isError) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    !storesQuery.enabled ||
+                    storesQuery.isFetching ||
+                    links.isFetching ||
+                    suspended
+                  }
+                  onClick={() => void refreshRegistration()}
+                >
+                  店舗情報を更新
+                </Button>
+              )}
+            </div>
+          )}
         </section>
       </main>
+      {isMobile && (
+        <Sheet
+          modal={false}
+          open={Boolean(selectedStore || pointContent)}
+          onOpenChange={(open) => {
+            if (!open) clearSelection()
+          }}
+        >
+          <SheetContent
+            className="max-h-[42dvh] pb-[env(safe-area-inset-bottom)]"
+            aria-describedby={undefined}
+            onInteractOutside={(event) => event.preventDefault()}
+            onOpenAutoFocus={() => {
+              const active = document.activeElement
+              sheetTrigger.current =
+                active instanceof HTMLElement ? active : null
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              const trigger = sheetTrigger.current
+              if (
+                trigger?.isConnected &&
+                document.activeElement === document.body
+              )
+                trigger.focus({ preventScroll: true })
+            }}
+          >
+            <SheetTitle className="shrink-0 border-b px-5 py-4 pr-14 text-sm font-semibold">
+              トイレ情報
+            </SheetTitle>
+            <div
+              key={selection && `${selection.kind}:${selection.id}`}
+              className="min-h-0 overflow-y-auto overscroll-contain p-5"
+            >
+              {pointContent ??
+                (selectedStore && (
+                  <SelectedStoreDetails store={selectedStore} onEdit={onEdit} />
+                ))}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
       {editor && (
         <StoreEditor
           target={editor.target}
@@ -585,7 +680,7 @@ function MapCanvas({
         mapTypeControl={false}
         streetViewControl={false}
         fullscreenControl={false}
-        zoomControl
+        zoomControl={false}
         onTilesLoaded={() => setTilesReady(true)}
         onIdle={() => {
           const center = map?.getCenter()
@@ -674,23 +769,6 @@ function MapCanvas({
           )}
           {locating ? '現在地を取得中' : '現在地'}
         </Button>
-      </div>
-      <div
-        aria-label="ピンの凡例"
-        className="absolute bottom-7 left-3 flex max-w-[calc(100%-4rem)] flex-wrap gap-x-3 gap-y-1 rounded-lg border bg-background/95 px-3 py-2 text-[11px] shadow-sm"
-      >
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-slate-900" />
-          登録済み
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-[#9ca3af]" />
-          データなし
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-rose-600" />
-          選択中
-        </span>
       </div>
       {locationError && (
         <Alert className="map-panel-enter absolute right-4 bottom-24 left-4 w-auto max-w-md p-4 shadow-sm sm:bottom-20">

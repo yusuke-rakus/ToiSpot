@@ -84,13 +84,28 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
     }
   })
   await page.goto('/')
+  const mobile = testInfo.project.name === 'mobile'
+  const sheet = page.getByRole('dialog', { name: 'トイレ情報' })
+  const list = page.getByRole('list', { name: '周辺店舗一覧' })
+  const registeredPin = page.getByRole('button', {
+    name: '確認済みコンビニ・利用可',
+  })
   const pin = page.getByRole('button', { name: '未調査のコンビニ・データなし' })
   await expect(pin).toBeVisible()
   await expect(pin.locator('svg')).toHaveCSS('color', 'rgb(156, 163, 175)')
-  await expect(
-    page.getByRole('list', { name: '周辺店舗一覧' }).locator('li'),
-  ).toHaveCount(2)
+  await expect(list.locator('li')).toHaveCount(mobile ? 0 : 2)
+  await expect(sheet).toHaveCount(0)
+  if (mobile) {
+    await expect(page.getByRole('heading', { name: 'トイレ情報' })).toHaveCount(
+      0,
+    )
+  }
   await pin.click()
+  if (mobile) {
+    await expect(sheet).toBeVisible()
+    await expect(sheet).toHaveAttribute('data-side', 'bottom')
+    await expect(page.locator('[data-slot="sheet-overlay"]')).toHaveCount(0)
+  }
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await expect(page.getByText('Googleから取得した住所')).toBeVisible()
   const rose600 = await page.evaluate(() => {
@@ -116,14 +131,15 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   await expect(
     page.getByRole('button', { name: 'トイレ情報を登録' }),
   ).toHaveCount(0)
-  await expect(page.getByLabel('ピンの凡例')).toBeVisible()
   await page.screenshot({
     path: `output/playwright/places-${testInfo.project.name}-detail.png`,
     fullPage: true,
     animations: 'disabled',
   })
-  await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   const map = page.getByLabel('周辺の地図', { exact: true })
+  const previousCenter = await map.getAttribute('data-center')
+  await page.getByRole('button', { name: '地図を移動', exact: true }).click()
+  await expect(map).not.toHaveAttribute('data-center', previousCenter!)
   const center = await map.getAttribute('data-center')
   const zoom = await map.getAttribute('data-zoom')
   await page.getByRole('button', { name: /テーマを変更/ }).click()
@@ -142,8 +158,27 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
       () => (window as unknown as { nearbyCalls: number }).nearbyCalls,
     ),
   ).toBe(1)
+  if (mobile) {
+    await registeredPin.click()
+    await expect(
+      sheet.getByRole('heading', { name: '確認済みコンビニ' }),
+    ).toBeVisible()
+    await expect(pin.locator('svg')).toHaveAttribute('data-selected', 'false')
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    await expect(registeredPin.locator('svg')).toHaveAttribute(
+      'data-selected',
+      'false',
+    )
+    await pin.click()
+  }
+
   await page.getByRole('button', { name: 'この周辺を検索' }).click()
-  await expect(page.getByText('検索した地点から半径3km・近い順')).toBeVisible()
+  if (mobile) await expect(sheet).toHaveCount(0)
+  else
+    await expect(
+      page.getByText('検索した地点から半径3km・近い順'),
+    ).toBeVisible()
   await expect(pin).toBeVisible()
   expect(
     await page.evaluate(
@@ -160,18 +195,22 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
     'transform',
     'matrix(1, 0, 0, 1, 0, 0)',
   )
-  await page
-    .getByRole('button', { name: '確認済みコンビニの詳細を見る' })
-    .click()
-  const registeredPin = page.getByRole('button', {
-    name: '確認済みコンビニ・利用可',
-  })
+  if (mobile) await registeredPin.click()
+  else
+    await page
+      .getByRole('button', { name: '確認済みコンビニの詳細を見る' })
+      .click()
   await expect(registeredPin.locator('svg')).toHaveCSS('color', rose600)
   await expect(registeredPin.locator('svg')).toHaveCSS(
     'transform',
     'matrix(1.3, 0, 0, 1.3, 0, 0)',
   )
-  await page.getByRole('button', { name: '一覧へ戻る' }).click()
+  if (mobile) {
+    await sheet.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
+    await expect(sheet).toHaveCount(0)
+  } else {
+    await page.getByRole('button', { name: '一覧へ戻る' }).click()
+  }
   await expect(registeredPin.locator('svg')).toHaveCSS(
     'color',
     'rgb(255, 255, 255)',
@@ -186,6 +225,10 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
 test('店舗一覧をパネル内でスクロールし、詳細と一覧への切り替えで先頭に戻る', async ({
   page,
 }, testInfo) => {
+  test.skip(
+    testInfo.project.name === 'mobile',
+    '店舗一覧はデスクトップ幅で表示する',
+  )
   const stores = Array.from({ length: 15 }, (_, index) => ({
     ...store,
     id: `store-${index}`,
