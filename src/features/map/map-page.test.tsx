@@ -451,7 +451,9 @@ it('自動モードで縮小すると詳細を残して全検索を停止し、�
   fireEvent.click(screen.getByRole('button', { name: 'ズーム12' }))
   expect(screen.getByText('地図を拡大すると検索を再開します')).toBeVisible()
   expect(screen.getByText('トイレ情報：データなし')).toBeVisible()
-  expect(screen.getByRole('button', { name: 'この周辺を検索' })).toBeDisabled()
+  expect(
+    screen.queryByRole('button', { name: 'この周辺を検索' }),
+  ).not.toBeInTheDocument()
   expect(
     screen.getByRole('button', { name: 'コンビニ検索を再試行' }),
   ).toBeDisabled()

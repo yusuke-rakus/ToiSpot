@@ -457,9 +457,6 @@ function MapCanvas({
     onSuspend: onSuspendSearch,
   })
   const suppressPan = viewportSearch.suppressPan
-  const zoomPaused =
-    placesConfig.autoSearch && camera.zoom < placesConfig.minZoom
-
   const fallbackIfNeeded = useCallback(() => {
     if (!initialSearchDone.current) {
       initialSearchDone.current = true
@@ -628,22 +625,15 @@ function MapCanvas({
         </div>
       )}
 
-      <div className="absolute top-4 right-4 flex flex-col items-end gap-2 sm:top-5 sm:right-5">
+      {!placesConfig.autoSearch && (
         <Button
           variant="outline"
-          className="h-11 rounded-xl bg-background shadow-sm"
-          disabled={
-            !ready ||
-            locating ||
-            searching ||
-            zoomPaused ||
-            (placesConfig.autoSearch && !locationResolved)
-          }
+          className="absolute top-4 left-1/2 h-11 -translate-x-1/2 rounded-xl bg-background shadow-sm sm:top-5"
+          disabled={!ready || locating || searching}
           onClick={() => {
             if (searchGuard.current) return
             searchGuard.current = true
-            if (placesConfig.autoSearch) viewportSearch.searchNow()
-            else onSearchArea(map?.getCenter()?.toJSON() ?? mapCenter)
+            onSearchArea(map?.getCenter()?.toJSON() ?? mapCenter)
             queueMicrotask(() => {
               searchGuard.current = false
             })
@@ -651,6 +641,10 @@ function MapCanvas({
         >
           {searching ? 'コンビニを検索中' : 'この周辺を検索'}
         </Button>
+      )}
+      <div
+        className={`absolute right-4 sm:top-5 sm:right-5 ${placesConfig.autoSearch ? 'top-4' : 'top-18'}`}
+      >
         <Button
           variant="outline"
           size="lg"

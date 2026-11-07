@@ -119,7 +119,7 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   await expect(page.getByText('地図を拡大すると検索を再開します')).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'この周辺を検索' }),
-  ).toBeDisabled()
+  ).toHaveCount(0)
   await expect(
     page.getByRole('button', { name: '店舗情報を更新' }),
   ).toBeDisabled()
@@ -166,7 +166,8 @@ test('自動取得を有効にしたまま分割取得だけ無効化できる',
   await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   await expect.poll(() => callCount(page)).toBe(2)
   await expect(list.locator('li')).toHaveCount(20)
-  await page.getByRole('button', { name: 'この周辺を検索' }).click()
-  await expect.poll(() => callCount(page)).toBe(3)
+  await expect(
+    page.getByRole('button', { name: 'この周辺を検索' }),
+  ).toHaveCount(0)
   expect(externalRequests).toEqual([])
 })
