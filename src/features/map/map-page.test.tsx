@@ -42,7 +42,7 @@ vi.mock('../auth/admin-provider', () => ({ useAdmin: () => admin }))
 vi.mock('../stores/store-writer', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../stores/store-writer')>()),
   allocateStoreId: () => writer.allocate(),
-  saveLocalStore: (...args: unknown[]) => writer.save(...args),
+  saveConfiguredStore: (...args: unknown[]) => writer.save(...args),
 }))
 
 const storeQuery = vi.hoisted(() => ({

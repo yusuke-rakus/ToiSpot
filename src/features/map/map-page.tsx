@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useTheme } from '@/components/theme-provider'
+import { firebaseConnection, usesFirebaseEmulators } from '@/lib/firebase'
 import { useStores } from '@/features/stores/use-stores'
 import { StorePanel } from '@/features/stores/store-panel'
 import { StoreMarkers } from '@/features/stores/store-markers'
@@ -196,7 +197,9 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
       })
     } catch {
       setSaveNotice(
-        '登録の準備ができませんでした。Emulatorの接続を確認してください。',
+        usesFirebaseEmulators
+          ? '登録の準備ができませんでした。Emulatorの接続を確認してください。'
+          : '登録の準備ができませんでした。通信状態を確認してください。',
       )
     }
   }
@@ -264,6 +267,13 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
             className="h-full max-lg:[&_[data-slot=scroll-area-viewport]]:max-h-[42svh]"
           >
             <div className="p-5 sm:p-7">
+              {firebaseConnection.error && (
+                <Alert className="mb-4" variant="destructive">
+                  <AlertDescription>
+                    {firebaseConnection.error}
+                  </AlertDescription>
+                </Alert>
+              )}
               {saveNotice && (
                 <p
                   role="status"

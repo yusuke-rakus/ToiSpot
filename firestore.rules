@@ -1,16 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function googleUser() {
+    function passwordUser() {
       return request.auth != null
-        && request.auth.token.email is string
-        && request.auth.token.email_verified == true
-        && request.auth.token.firebase.sign_in_provider == 'google.com';
+        && request.auth.token.firebase.sign_in_provider == 'password';
     }
     function admin() {
-      return googleUser()
+      return passwordUser()
         && exists(/databases/$(database)/documents/_settings/admin)
-        && get(/databases/$(database)/documents/_settings/admin).data.email == request.auth.token.email.lower();
+        && get(/databases/$(database)/documents/_settings/admin).data.uid is string
+        && get(/databases/$(database)/documents/_settings/admin).data.uid == request.auth.uid;
     }
     function count(value) {
       return value == null || (value is int && value >= 0 && value <= 9007199254740991);
@@ -36,7 +35,7 @@ service cloud.firestore {
         && d.get('isSample', false) is bool;
     }
     match /_settings/admin {
-      allow get: if googleUser() && resource.data.email == request.auth.token.email.lower();
+      allow get: if passwordUser() && resource.data.uid is string && resource.data.uid == request.auth.uid;
       allow list, write: if false;
     }
     match /stores/{storeId} {

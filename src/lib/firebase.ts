@@ -1,41 +1,26 @@
 import { getApps, initializeApp } from 'firebase/app'
 import { connectAuthEmulator, getAuth } from 'firebase/auth'
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
-import { z } from 'zod'
+import { resolveFirebaseConnection } from './firebase-config'
 
-const firebaseConfigSchema = z.object({
-  apiKey: z.string().min(1),
-  authDomain: z.string().min(1),
-  projectId: z.string().min(1),
-  appId: z.string().min(1),
-})
-
-export const usesFirebaseEmulators =
-  import.meta.env.VITE_USE_FIREBASE_EMULATORS !== 'false'
+export const firebaseConnection = resolveFirebaseConnection(import.meta.env)
+export const firebaseEnabled = firebaseConnection.enabled
+export const usesFirebaseEmulators = firebaseConnection.mode === 'emulator'
+export const firebaseQueryScope = [
+  firebaseConnection.mode,
+  firebaseConnection.projectId,
+] as const
 
 function createFirebaseServices() {
-  const useEmulators = usesFirebaseEmulators
-  const config = firebaseConfigSchema.parse(
-    useEmulators
-      ? {
-          apiKey: 'demo-api-key',
-          authDomain: 'demo-toilet-map.firebaseapp.com',
-          projectId: 'demo-toilet-map',
-          appId: 'demo-app-id',
-        }
-      : {
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-          appId: import.meta.env.VITE_FIREBASE_APP_ID,
-        },
-  )
+  if (!firebaseConnection.enabled)
+    throw new Error(firebaseConnection.error ?? 'Firebase接続は無効です。')
+  const config = firebaseConnection.config
   const existingApp = getApps().find((app) => app.name === 'toilet-map-client')
   const app = existingApp ?? initializeApp(config, 'toilet-map-client')
   const auth = getAuth(app)
   const db = getFirestore(app)
 
-  if (useEmulators && !existingApp) {
+  if (usesFirebaseEmulators && !existingApp) {
     connectAuthEmulator(auth, 'http://127.0.0.1:19090', {
       disableWarnings: true,
     })

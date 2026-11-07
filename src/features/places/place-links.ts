@@ -1,7 +1,11 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { doc, getDocFromServer, type Firestore } from 'firebase/firestore'
-import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
+import {
+  getFirebaseServices,
+  firebaseEnabled,
+  firebaseQueryScope,
+} from '@/lib/firebase'
 import {
   googlePlaceIdSchema,
   storeDocumentSchema,
@@ -42,12 +46,10 @@ export async function readPlaceLinks(
   return Object.fromEntries(entries)
 }
 
-export async function fetchLocalPlaceLinks(
+export async function fetchPlaceLinks(
   placeIds: string[],
   signal?: AbortSignal,
 ) {
-  if (!usesFirebaseEmulators)
-    throw new Error('Place links require local emulator')
   return readPlaceLinks(getFirebaseServices().db, placeIds, signal)
 }
 
@@ -61,9 +63,9 @@ export function usePlaceLinks(
   const idsKey = JSON.stringify(ids)
   const query = useQuery({
     // 同じ候補が返る再検索でも、以前の「未登録」を再利用せず照会する。
-    queryKey: ['placeLinks', 'emulator', 'demo-toilet-map', requestId, ids],
-    queryFn: ({ signal }) => fetchLocalPlaceLinks(ids, signal),
-    enabled: usesFirebaseEmulators && ids.length > 0 && !suspended,
+    queryKey: ['placeLinks', ...firebaseQueryScope, requestId, ids],
+    queryFn: ({ signal }) => fetchPlaceLinks(ids, signal),
+    enabled: firebaseEnabled && ids.length > 0 && !suspended,
     staleTime: Infinity,
     gcTime: 0,
     refetchOnMount: 'always',
@@ -73,13 +75,12 @@ export function usePlaceLinks(
       void client.cancelQueries({
         queryKey: [
           'placeLinks',
-          'emulator',
-          'demo-toilet-map',
+          ...firebaseQueryScope,
           requestId,
           JSON.parse(idsKey),
         ],
         exact: true,
       })
   }, [client, requestId, idsKey, suspended])
-  return { ...query, enabled: usesFirebaseEmulators && ids.length > 0 }
+  return { ...query, enabled: firebaseEnabled && ids.length > 0 }
 }

@@ -26,6 +26,7 @@ import {
   deleteApp as deleteClientApp,
 } from 'firebase/app'
 import { initializeApp, deleteApp, type App } from 'firebase-admin/app'
+import { getAuth as getAdminAuth } from 'firebase-admin/auth'
 import {
   getFirestore,
   Timestamp as AdminTimestamp,
@@ -49,7 +50,7 @@ import { INITIAL_CENTER } from '../../src/features/map/map-config'
 import { geohashForLocation } from 'geofire-common'
 import { cleanupLegacyStores } from '../../scripts/lib/cleanup-stores'
 import { createTestStores } from '../fixtures/stores'
-import { seedAdminSettings } from '../../scripts/lib/seed-admin'
+import { seedAdminSettings, seedAdminUser } from '../../scripts/lib/seed-admin'
 import { seedStoreDocuments, seedStores } from '../../scripts/lib/seed-stores'
 import {
   saveStore,
@@ -62,8 +63,7 @@ import {
 import {
   getAuth,
   connectAuthEmulator,
-  GoogleAuthProvider,
-  signInWithCredential,
+  signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
 import { checkAdminAccess } from '../../src/features/auth/auth-repository'
@@ -75,11 +75,23 @@ let adminApp: App
 let admin: Firestore
 let clientApp: ReturnType<typeof initializeClientApp>
 let client: ReturnType<typeof getClientFirestore>
+const authUsers: string[] = []
 
 beforeAll(async () => {
   const host = process.env.FIRESTORE_EMULATOR_HOST
   if (!host || !['127.0.0.1:18081', 'localhost:18081'].includes(host))
     throw new Error('Local test emulator required')
+  const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST
+  if (
+    !authHost ||
+    ![
+      '127.0.0.1:19090',
+      'localhost:19090',
+      '127.0.0.1:19091',
+      'localhost:19091',
+    ].includes(authHost)
+  )
+    throw new Error('Local test Auth emulator required')
   process.env.METADATA_SERVER_DETECTION = 'none'
   environment = await initializeTestEnvironment({
     projectId,
@@ -96,11 +108,17 @@ beforeEach(async () => {
   )
   client = getClientFirestore(clientApp)
   connectFirestoreEmulator(client, '127.0.0.1', 18081)
-  connectAuthEmulator(getAuth(clientApp), 'http://127.0.0.1:19090', {
-    disableWarnings: true,
-  })
+  connectAuthEmulator(
+    getAuth(clientApp),
+    `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`,
+    {
+      disableWarnings: true,
+    },
+  )
 })
 afterEach(async () => {
+  for (const uid of authUsers.splice(0))
+    await getAdminAuth(adminApp).deleteUser(uid)
   if (client) await terminate(client)
   if (clientApp) await deleteClientApp(clientApp)
 })
@@ -173,7 +191,7 @@ describe('現在のテスト店舗のシード', () => {
     await admin.doc(`placeLinks/${data.googlePlaceId}`).delete()
     await admin.doc(`stores/${missing.id}`).delete()
     await admin.doc('stores/manual').set({ name: '別の店舗' })
-    await seedAdminSettings(admin, 'admin@example.test')
+    await seedAdminSettings(admin, 'manager-uid')
     expect(await seedStores(admin)).toEqual({
       created: 1,
       skipped: 6,
@@ -188,7 +206,7 @@ describe('現在のテスト店舗のシード', () => {
       name: '別の店舗',
     })
     expect((await admin.doc('_settings/admin').get()).data()).toEqual({
-      email: 'admin@example.test',
+      uid: 'manager-uid',
     })
   })
 
@@ -281,7 +299,7 @@ describe('Emulator上の取得と投入', () => {
 
   it('座標のみの店舗とサンプルだけを整理し、Places店舗と管理者設定を保持する', async () => {
     await seedTestStores(admin)
-    await seedAdminSettings(admin, 'admin@example.test')
+    await seedAdminSettings(admin, 'manager-uid')
     const data = createTestStores('2026-11-03T00:00:00.000Z')[0].data
     const { googlePlaceId, ...legacy } = data
     await admin.doc('stores/legacy').set(legacy)
@@ -307,7 +325,7 @@ describe('Emulator上の取得と投入', () => {
     )
     expect((await admin.doc('placeLinks/ChIJ_sample').get()).exists).toBe(false)
     expect((await admin.doc('_settings/admin').get()).data()).toEqual({
-      email: 'admin@example.test',
+      uid: 'manager-uid',
     })
     expect((await readStores(unauthenticatedDb())).stores).toHaveLength(6)
   })
@@ -346,14 +364,14 @@ function unauthenticatedDb() {
 }
 
 function manager(
-  email = 'admin@example.test',
-  provider: 'google.com' | 'password' = 'google.com',
-  verified = true,
+  uid = 'manager-uid',
+  provider: 'google.com' | 'password' = 'password',
+  verified = false,
 ) {
   return (
     environment
-      .authenticatedContext('manager', {
-        email,
+      .authenticatedContext(uid, {
+        email: 'admin@example.test',
         email_verified: verified,
         firebase: { sign_in_provider: provider },
       })
@@ -373,22 +391,18 @@ function newPayload() {
 }
 describe('管理者設定と書き込みRules', () => {
   beforeEach(async () => {
-    await seedAdminSettings(admin, 'admin@example.test')
+    await seedAdminSettings(admin, 'manager-uid')
   })
 
   it('設定の新規作成・再実行・変更・未指定を扱う', async () => {
-    expect(await seedAdminSettings(admin, 'admin@example.test')).toBe(
-      'unchanged',
-    )
+    expect(await seedAdminSettings(admin, 'manager-uid')).toBe('unchanged')
     expect(await seedAdminSettings(admin, null)).toBe('skipped')
     expect((await admin.doc('_settings/admin').get()).data()).toEqual({
-      email: 'admin@example.test',
+      uid: 'manager-uid',
     })
-    expect(await seedAdminSettings(admin, 'other@example.test')).toBe('updated')
+    expect(await seedAdminSettings(admin, 'other-uid')).toBe('updated')
     await assertFails(getDoc(doc(manager(), '_settings/admin')))
-    await assertSucceeds(
-      getDoc(doc(manager('other@example.test'), '_settings/admin')),
-    )
+    await assertSucceeds(getDoc(doc(manager('other-uid'), '_settings/admin')))
   })
 
   it('管理者だけが設定をgetでき、設定の列挙・改変・店舗削除は全員拒否する', async () => {
@@ -396,32 +410,38 @@ describe('管理者設定と書き込みRules', () => {
     await assertSucceeds(getDoc(doc(db, '_settings/admin')))
     await assertFails(getDocs(collection(db, '_settings')))
     await assertFails(
-      setDoc(doc(db, '_settings/admin'), { email: 'attacker@example.test' }),
+      setDoc(doc(db, '_settings/admin'), { uid: 'attacker-uid' }),
     )
     await assertFails(deleteDoc(doc(db, '_settings/admin')))
     await assertFails(getDoc(doc(client, '_settings/admin')))
-    await assertFails(
-      getDoc(doc(manager('other@example.test'), '_settings/admin')),
-    )
+    await assertFails(getDoc(doc(manager('other-uid'), '_settings/admin')))
     await seedTestStores(admin)
     await assertFails(deleteDoc(doc(db, 'stores/sample-tokyo-01')))
   })
 
   it.each([
-    ['other@example.test', 'google.com', true],
-    ['admin@example.test', 'password', true],
-    ['admin@example.test', 'google.com', false],
+    ['other-uid', 'password', false],
+    ['manager-uid', 'google.com', true],
+    ['manager-uid', 'google.com', false],
   ] as const)(
-    '許可メール・Google・確認済みの全条件が必要: %s/%s/%s',
-    async (email, provider, verified) => {
-      const db = manager(email, provider, verified)
-      await assertFails(setDoc(doc(db, 'stores/new'), newPayload()))
+    '許可UIDとpasswordの両条件が必要: %s/%s/%s',
+    async (uid, provider, verified) => {
+      const db = manager(uid, provider, verified)
+      await assertFails(createLinkedStore(db, 'new'))
       await assertFails(getDoc(doc(db, '_settings/admin')))
     },
   )
 
+  it('旧メール設定では同じメール・UIDでも権限を与えない', async () => {
+    await admin.doc('_settings/admin').set({ email: 'admin@example.test' })
+    await assertFails(getDoc(doc(manager(), '_settings/admin')))
+    await assertFails(createLinkedStore(manager(), 'legacy-settings'))
+    expect(await seedAdminSettings(admin, 'manager-uid')).toBe('updated')
+    await assertSucceeds(getDoc(doc(manager(), '_settings/admin')))
+  })
+
   it('管理者はPlaces店舗を作成・編集でき、作成日時を保持する', async () => {
-    const db = manager('ADMIN@EXAMPLE.TEST')
+    const db = manager()
     await assertSucceeds(createLinkedStore(db, 'new'))
     await assertSucceeds(
       updateDoc(doc(db, 'stores/new'), {
@@ -540,22 +560,95 @@ describe('管理者設定と書き込みRules', () => {
     )
   })
 
-  it('設定がなければ許可メールでも作成できない', async () => {
+  it('設定がなければ許可UIDでも作成できない', async () => {
     await admin.doc('_settings/admin').delete()
     await assertFails(setDoc(doc(manager(), 'stores/new'), newPayload()))
   })
 })
 
 describe('Auth Emulatorと書き込み処理の結合', () => {
-  it('模擬Googleログインで管理者判定・作成・編集・再試行・競合・ログアウトを検証する', async () => {
-    await seedAdminSettings(admin, 'admin@example.test')
-    const auth = getAuth(clientApp)
-    // Auth Emulatorがサポートする署名なしのGoogleテストIDトークン。
-    const token = `${Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')}.${Buffer.from(JSON.stringify({ sub: 'test-google-admin', email: 'admin@example.test', email_verified: true, iss: 'https://accounts.google.com', aud: 'demo-client-id', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.`
-    const { user } = await signInWithCredential(
-      auth,
-      GoogleAuthProvider.credential(token),
+  it('既存Googleユーザーにも同じUIDでパスワードを設定できる', async () => {
+    const auth = getAdminAuth(adminApp)
+    const uid = 'legacy-google-admin'
+    const email = 'legacy-admin@example.test'
+    const result = await auth.importUsers([
+      {
+        uid,
+        email,
+        providerData: [
+          { providerId: 'google.com', uid: 'legacy-google-provider', email },
+        ],
+      },
+    ])
+    expect(result.failureCount).toBe(0)
+    authUsers.push(uid)
+    await admin.doc('_settings/admin').set({ email })
+    const seeded = await seedAdminUser(auth, {
+      email,
+      password: 'migration-test-password',
+    })
+    expect(seeded.uid).toBe(uid)
+    expect(await seedAdminSettings(admin, uid)).toBe('updated')
+    const { user } = await signInWithEmailAndPassword(
+      getAuth(clientApp),
+      email,
+      'migration-test-password',
     )
+    expect(user.uid).toBe(uid)
+    expect(await checkAdminAccess(user, client)).toBe(true)
+    await signOut(getAuth(clientApp))
+  })
+
+  it('再シードでUIDを保ちパスワードを更新し、無効ユーザーは再有効化しない', async () => {
+    const auth = getAdminAuth(adminApp)
+    const credentials = {
+      email: 'seed-admin@example.test',
+      password: 'first-test-password',
+    }
+    const first = await seedAdminUser(auth, credentials)
+    authUsers.push(first.uid)
+    const second = await seedAdminUser(auth, {
+      ...credentials,
+      password: 'second-test-password',
+    })
+    expect(second.uid).toBe(first.uid)
+    await expect(
+      signInWithEmailAndPassword(
+        getAuth(clientApp),
+        credentials.email,
+        credentials.password,
+      ),
+    ).rejects.toBeDefined()
+    const { user } = await signInWithEmailAndPassword(
+      getAuth(clientApp),
+      credentials.email,
+      'second-test-password',
+    )
+    expect(user.uid).toBe(first.uid)
+    await signOut(getAuth(clientApp))
+    await auth.updateUser(first.uid, { disabled: true })
+    await expect(seedAdminUser(auth, credentials)).rejects.toThrow('無効化済み')
+    expect((await auth.getUser(first.uid)).disabled).toBe(true)
+  })
+
+  it('シードしたパスワードで管理者判定・作成・編集・再試行・競合・ログアウトを検証する', async () => {
+    const credentials = {
+      email: 'writer-admin@example.test',
+      password: 'local-test-password',
+    }
+    const seeded = await seedAdminUser(getAdminAuth(adminApp), credentials)
+    authUsers.push(seeded.uid)
+    await seedAdminSettings(admin, seeded.uid)
+    const auth = getAuth(clientApp)
+    await expect(
+      signInWithEmailAndPassword(auth, credentials.email, 'incorrect-password'),
+    ).rejects.toBeDefined()
+    const { user } = await signInWithEmailAndPassword(
+      auth,
+      credentials.email,
+      credentials.password,
+    )
+    expect(user.emailVerified).toBe(false)
     expect(await checkAdminAccess(user, client)).toBe(true)
     const input = storeInputSchema.parse(
       createTestStores('2026-11-03T00:00:00.000Z')[0].data,
@@ -595,8 +688,15 @@ describe('Auth Emulatorと書き込み処理の結合', () => {
         input,
       ),
     ).rejects.toBeInstanceOf(StoreConflictError)
-    await seedAdminSettings(admin, 'another@example.test')
+    await seedAdminSettings(admin, 'another-uid')
     expect(await checkAdminAccess(user, client)).toBe(false)
+    await expect(
+      saveStore(
+        client,
+        { id: 'revoked', googlePlaceId: 'ChIJ_revoked' },
+        input,
+      ),
+    ).rejects.toBeDefined()
     await signOut(auth)
     await expect(
       saveStore(
@@ -610,7 +710,7 @@ describe('Auth Emulatorと書き込み処理の結合', () => {
 
 describe('Place IDの紐付けとRules', () => {
   beforeEach(async () => {
-    await seedAdminSettings(admin, 'admin@example.test')
+    await seedAdminSettings(admin, 'manager-uid')
   })
   const placeId = 'ChIJ_test'
   const input = () =>

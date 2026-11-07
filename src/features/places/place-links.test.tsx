@@ -7,9 +7,16 @@ import { createTestStores } from '../../../tests/fixtures/stores'
 import { INITIAL_CENTER } from '../map/map-config'
 import { usePlaceLinks } from './place-links'
 
-const state = vi.hoisted(() => ({ registered: false, read: vi.fn() }))
+const state = vi.hoisted(() => ({
+  enabled: true,
+  registered: false,
+  read: vi.fn(),
+}))
 vi.mock('@/lib/firebase', () => ({
-  usesFirebaseEmulators: true,
+  get firebaseEnabled() {
+    return state.enabled
+  },
+  firebaseQueryScope: ['cloud', 'toilet-map-test'],
   getFirebaseServices: () => ({ db: {} }),
 }))
 vi.mock('firebase/firestore', () => ({
@@ -32,6 +39,7 @@ const places = [
 ]
 
 beforeEach(() => {
+  state.enabled = true
   state.registered = false
   state.read.mockReset().mockImplementation(async (path: string) =>
     path.startsWith('placeLinks/')
@@ -102,10 +110,34 @@ it('同じ候補への再検索でも、以前の未登録判定を使わず新�
     { wrapper, initialProps: { search: 1 } },
   )
   await waitFor(() => expect(result.current.data?.ChIJ_test).toBeNull())
+  expect(
+    client.getQueryData([
+      'placeLinks',
+      'cloud',
+      'toilet-map-test',
+      1,
+      ['ChIJ_test'],
+    ]),
+  ).toBeDefined()
   state.registered = true
   rerender({ search: 2 })
   await waitFor(() => expect(result.current.data?.ChIJ_test?.id).toBe(storeId))
   expect(state.read).toHaveBeenCalledTimes(3)
+  unmount()
+  client.clear()
+})
+
+it('接続が無効なときはQueryからSDKを呼ばない', () => {
+  state.enabled = false
+  const client = createQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result, unmount } = renderHook(() => usePlaceLinks(places), {
+    wrapper,
+  })
+  expect(result.current.enabled).toBe(false)
+  expect(state.read).not.toHaveBeenCalled()
   unmount()
   client.clear()
 })

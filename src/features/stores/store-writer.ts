@@ -6,7 +6,7 @@ import {
   type Firestore,
 } from 'firebase/firestore'
 import { geohashForLocation } from 'geofire-common'
-import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
+import { getFirebaseServices } from '@/lib/firebase'
 import {
   storeDocumentSchema,
   storeInputSchema,
@@ -22,12 +22,11 @@ export type StoreWriteTarget = {
 }
 export class StoreConflictError extends Error {}
 
-function localDb() {
-  if (!usesFirebaseEmulators) throw new Error('Local writes only')
+function configuredDb() {
   return getFirebaseServices().db
 }
 export function allocateStoreId() {
-  return doc(collection(localDb(), 'stores')).id
+  return doc(collection(configuredDb(), 'stores')).id
 }
 
 export async function saveStore(
@@ -104,6 +103,9 @@ export async function saveStore(
   return target.id
 }
 
-export function saveLocalStore(target: StoreWriteTarget, input: StoreInput) {
-  return saveStore(localDb(), target, input)
+export function saveConfiguredStore(
+  target: StoreWriteTarget,
+  input: StoreInput,
+) {
+  return saveStore(configuredDb(), target, input)
 }

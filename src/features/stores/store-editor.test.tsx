@@ -15,7 +15,7 @@ vi.mock('../auth/admin-provider', () => ({
 }))
 vi.mock('./store-writer', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./store-writer')>()),
-  saveLocalStore: (...args: unknown[]) => mock.save(...args),
+  saveConfiguredStore: (...args: unknown[]) => mock.save(...args),
 }))
 beforeEach(() => {
   vi.clearAllMocks()

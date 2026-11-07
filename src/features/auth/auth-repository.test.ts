@@ -4,6 +4,7 @@ import type { User } from 'firebase/auth'
 
 const mocks = vi.hoisted(() => ({
   enabled: true,
+  initializationError: false,
   auth: {},
   db: {},
   getDoc: vi.fn(),
@@ -14,10 +15,16 @@ const mocks = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }))
 vi.mock('@/lib/firebase', () => ({
-  get usesFirebaseEmulators() {
+  firebaseConnection: { error: null },
+  usesFirebaseEmulators: false,
+  get firebaseEnabled() {
     return mocks.enabled
   },
-  getFirebaseServices: () => ({ auth: mocks.auth, db: mocks.db }),
+  getFirebaseServices: () => {
+    if (!mocks.enabled) throw new Error('Firebase接続は無効です。')
+    if (mocks.initializationError) throw new Error('private-config-value')
+    return { auth: mocks.auth, db: mocks.db }
+  },
 }))
 vi.mock('firebase/firestore', () => ({
   doc: vi.fn(),
@@ -30,27 +37,22 @@ vi.mock('firebase/auth', () => ({
     mocks.listener = listener
     return mocks.unsubscribe
   },
-  GoogleAuthProvider: class {
-    setCustomParameters = vi.fn()
-  },
-  signInWithPopup: (...args: unknown[]) => mocks.signIn(...args),
+  signInWithEmailAndPassword: (...args: unknown[]) => mocks.signIn(...args),
   signOut: (...args: unknown[]) => mocks.signOut(...args),
 }))
 import {
   checkAdminAccess,
   loginErrorMessage,
-  loginWithGoogle,
+  loginWithPassword,
+  logoutAdmin,
   observeAdminSession,
   type AdminSession,
 } from './auth-repository'
 
-function user(
-  email = 'admin@example.test',
-  verified = true,
-  provider = 'google.com',
-) {
+function user(uid = 'manager-uid', verified = false, provider = 'password') {
   return {
-    email,
+    uid,
+    email: 'admin@example.test',
     getIdTokenResult: vi.fn().mockResolvedValue({
       claims: { email_verified: verified },
       signInProvider: provider,
@@ -61,35 +63,40 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.auth = {}
   mocks.enabled = true
+  mocks.initializationError = false
   mocks.listener = undefined
   mocks.prepare.mockResolvedValue(undefined)
   mocks.getDoc.mockResolvedValue({
-    data: () => ({ email: 'admin@example.test' }),
+    data: () => ({ uid: 'manager-uid' }),
   })
   mocks.signOut.mockImplementation(async () => {
     await mocks.listener?.(null)
   })
 })
 
-it('Google・メール確認済み・許可メールをすべて照合する', async () => {
+it('許可UIDとpasswordプロバイダーを照合し、メール確認を要求しない', async () => {
+  expect(await checkAdminAccess(user(), mocks.db as never)).toBe(true)
+  expect(await checkAdminAccess(user('other-uid'), mocks.db as never)).toBe(
+    false,
+  )
   expect(
-    await checkAdminAccess(user('ADMIN@EXAMPLE.TEST'), mocks.db as never),
+    await checkAdminAccess(user('manager-uid', true), mocks.db as never),
   ).toBe(true)
   expect(
-    await checkAdminAccess(user('other@example.test'), mocks.db as never),
-  ).toBe(false)
-  expect(
     await checkAdminAccess(
-      user('admin@example.test', false),
+      user('manager-uid', true, 'google.com'),
       mocks.db as never,
     ),
   ).toBe(false)
-  expect(
-    await checkAdminAccess(
-      user('admin@example.test', true, 'password'),
-      mocks.db as never,
-    ),
-  ).toBe(false)
+  for (const data of [
+    undefined,
+    {},
+    { email: 'admin@example.test' },
+    { uid: '' },
+  ]) {
+    mocks.getDoc.mockResolvedValueOnce({ data: () => data })
+    expect(await checkAdminAccess(user(), mocks.db as never)).toBe(false)
+  }
   mocks.getDoc.mockRejectedValue({ code: 'permission-denied' })
   expect(await checkAdminAccess(user(), mocks.db as never)).toBe(false)
   mocks.getDoc.mockRejectedValue({ code: 'unavailable' })
@@ -101,7 +108,7 @@ it('タブ内セッションを準備し、対象外アカウントをサイン�
   const changed = vi.fn<(state: AdminSession) => void>()
   const stop = observeAdminSession(changed)
   await waitFor(() => expect(mocks.listener).toBeDefined())
-  await mocks.listener!(user('other@example.test'))
+  await mocks.listener!(user('other-uid'))
   expect(mocks.prepare).toHaveBeenCalledWith(mocks.auth, 'session')
   expect(mocks.signOut).toHaveBeenCalledOnce()
   expect(changed).toHaveBeenLastCalledWith(
@@ -127,7 +134,7 @@ it('権限確認中のログアウト後に古い管理者判定を反映しな�
   const pending = mocks.listener!(user())
   await waitFor(() => expect(mocks.getDoc).toHaveBeenCalled())
   await mocks.listener!(null)
-  resolve({ data: () => ({ email: 'admin@example.test' }) })
+  resolve({ data: () => ({ uid: 'manager-uid' }) })
   await pending
   expect(changed).toHaveBeenLastCalledWith({
     status: 'signedOut',
@@ -135,7 +142,7 @@ it('権限確認中のログアウト後に古い管理者判定を反映しな�
   })
   stop()
 })
-it('接続失敗は権限を与えず、クラウドモードでは認証を起動しない', async () => {
+it('接続失敗は権限を与えず、無効状態では認証を起動しない', async () => {
   const changed = vi.fn()
   mocks.getDoc.mockRejectedValue(new Error('offline'))
   const stop = observeAdminSession(changed)
@@ -149,14 +156,77 @@ it('接続失敗は権限を与えず、クラウドモードでは認証を起�
   mocks.prepare.mockClear()
   observeAdminSession(changed)()
   expect(mocks.prepare).not.toHaveBeenCalled()
-  expect(() => loginWithGoogle()).toThrow('Local authentication only')
+  await expect(
+    loginWithPassword('admin@example.test', 'test-password'),
+  ).rejects.toThrow('Firebase接続は無効')
 })
-it('ポップアップキャンセル・ブロック・通信失敗を案内し、生のエラーを出さない', () => {
-  expect(loginErrorMessage({ code: 'auth/popup-closed-by-user' })).toContain(
-    'キャンセル',
+it('認証情報の誤りは共通メッセージにし、生のエラーを出さない', () => {
+  const invalid = loginErrorMessage({ code: 'auth/invalid-credential' })
+  for (const code of [
+    'auth/user-not-found',
+    'auth/wrong-password',
+    'auth/invalid-login-credentials',
+  ]) {
+    expect(loginErrorMessage({ code })).toBe(invalid)
+  }
+  expect(invalid).toContain('メールアドレスまたはパスワード')
+  expect(loginErrorMessage({ code: 'auth/invalid-email' })).toContain('形式')
+  expect(loginErrorMessage({ code: 'auth/missing-password' })).toContain('入力')
+  expect(loginErrorMessage({ code: 'auth/too-many-requests' })).toContain(
+    'しばらく',
   )
-  expect(loginErrorMessage({ code: 'auth/popup-blocked' })).toContain(
-    'ブロック',
+  expect(
+    loginErrorMessage({ code: 'auth/admin-restricted-operation' }),
+  ).toContain('登録済み')
+  expect(loginErrorMessage({ code: 'auth/user-disabled' })).toContain('無効')
+  expect(loginErrorMessage({ code: 'auth/unauthorized-domain' })).toContain(
+    'ドメイン設定',
+  )
+  expect(loginErrorMessage({ code: 'auth/network-request-failed' })).toContain(
+    '通信',
   )
   expect(loginErrorMessage(new Error('secret-url'))).not.toContain('secret-url')
+  expect(loginErrorMessage(new Error('secret-url'))).not.toContain('Emulator')
+})
+
+it('セッション準備後、クラウドでも同じAuthでパスワード認証とログアウトを行う', async () => {
+  let resolve: () => void = () => {}
+  mocks.prepare.mockImplementationOnce(
+    () =>
+      new Promise<void>((done) => {
+        resolve = done
+      }),
+  )
+  const pending = loginWithPassword('admin@example.test', 'test-password')
+  expect(mocks.signIn).not.toHaveBeenCalled()
+  resolve()
+  await pending
+  expect(mocks.signIn).toHaveBeenCalledWith(
+    mocks.auth,
+    'admin@example.test',
+    'test-password',
+  )
+  await logoutAdmin()
+  expect(mocks.signOut).toHaveBeenCalledWith(mocks.auth)
+})
+
+it('セッション準備に失敗した場合は認証せず、再試行できる', async () => {
+  mocks.prepare.mockRejectedValueOnce(new Error('storage unavailable'))
+  await expect(
+    loginWithPassword('admin@example.test', 'test-password'),
+  ).rejects.toThrow()
+  expect(mocks.signIn).not.toHaveBeenCalled()
+  await loginWithPassword('admin@example.test', 'test-password')
+  expect(mocks.signIn).toHaveBeenCalledOnce()
+})
+
+it('SDK初期化に失敗しても画面を落とさず、生の設定値を表示しない', () => {
+  mocks.initializationError = true
+  const changed = vi.fn()
+  expect(() => observeAdminSession(changed)()).not.toThrow()
+  expect(changed).toHaveBeenLastCalledWith({
+    status: 'error',
+    message: '認証を開始できませんでした。管理者が接続設定を確認してください。',
+  })
+  expect(mocks.prepare).not.toHaveBeenCalled()
 })

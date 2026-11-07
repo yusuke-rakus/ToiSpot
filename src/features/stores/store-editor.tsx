@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dialog'
 import { useAdmin } from '@/features/auth/admin-provider'
 import { errorCode } from '@/features/auth/auth-repository'
+import { usesFirebaseEmulators } from '@/lib/firebase'
 import {
   availabilityLabels,
   availabilitySchema,
@@ -49,7 +50,7 @@ import {
   type StoreFormData,
 } from './store-form-schema'
 import {
-  saveLocalStore,
+  saveConfiguredStore,
   StoreConflictError,
   type StoreWriteTarget,
 } from './store-writer'
@@ -77,7 +78,7 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const mutation = useMutation({
     mutationFn: (input: StoreFormData) =>
-      saveLocalStore(
+      saveConfiguredStore(
         target,
         storeInputSchema.parse({
           ...input,
@@ -114,7 +115,9 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
           ? error.message
           : errorCode(error) === 'permission-denied'
             ? '保存する権限がありません。管理者設定とログイン状態を確認してください。'
-            : '保存できませんでした。入力内容は保持しています。Emulatorの接続を確認して再試行してください。',
+            : usesFirebaseEmulators
+              ? '保存できませんでした。入力内容は保持しています。Emulatorの接続を確認して再試行してください。'
+              : '保存できませんでした。入力内容は保持しています。通信状態を確認して再試行してください。',
       )
       if (errorCode(error) === 'permission-denied') admin.refreshAccess()
     } finally {

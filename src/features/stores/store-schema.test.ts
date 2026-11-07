@@ -114,6 +114,7 @@ describe('シードの接続先制限', () => {
     expect(getSeedTarget({})).toEqual({
       projectId: 'demo-toilet-map',
       host: '127.0.0.1:18081',
+      authHost: '127.0.0.1:19090',
     })
     expect(
       getSeedTarget({ FIRESTORE_EMULATOR_HOST: 'localhost:18081' }).host,

@@ -71,11 +71,13 @@ test('OS連動・手動切替・再読込・別タブ同期を利用できる', 
 test('管理者ヘッダーでもテーマとログアウトを操作できる', async ({
   page,
 }, testInfo) => {
-  await page.route('**/src/features/auth/admin-provider.tsx', (route) =>
-    route.fulfill({
-      contentType: 'application/javascript',
-      body: `export const AdminProvider = ({children}) => children; export const useAdmin = () => ({ status: 'admin', busy: false, message: null, logout: async () => {} });`,
-    }),
+  await page.route(
+    /\/src\/features\/auth\/admin-provider\.tsx(?:\?.*)?$/,
+    (route) =>
+      route.fulfill({
+        contentType: 'application/javascript',
+        body: `export const AdminProvider = ({children}) => children; export const useAdmin = () => ({ status: 'admin', busy: false, message: null, logout: async () => {} });`,
+      }),
   )
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'ログアウト' })).toBeVisible()

@@ -4,12 +4,13 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createQueryClient } from '@/lib/query-client'
 import { INITIAL_CENTER } from '../map/map-config'
-import type { MapViewport } from '../map/search-area'
+import { searchAreaKey, type MapViewport } from '../map/search-area'
 import { createTestStores } from '../../../tests/fixtures/stores'
 import { readNearbyStores } from './store-repository'
 import { useStores } from './use-stores'
 
 const state = vi.hoisted(() => ({
+  enabled: true,
   read: vi.fn(),
   ranges: vi.fn<(...args: unknown[]) => string[][]>(() => [
     ['a', 'b'],
@@ -17,7 +18,10 @@ const state = vi.hoisted(() => ({
   ]),
 }))
 vi.mock('@/lib/firebase', () => ({
-  usesFirebaseEmulators: true,
+  get firebaseEnabled() {
+    return state.enabled
+  },
+  firebaseQueryScope: ['cloud', 'toilet-map-test'],
   getFirebaseServices: () => ({ db: {} }),
 }))
 vi.mock('geofire-common', async (original) => ({
@@ -54,6 +58,7 @@ const snapshot = {
   ],
 }
 beforeEach(() => {
+  state.enabled = true
   state.read.mockReset().mockResolvedValue(snapshot)
   state.ranges.mockClear()
 })
@@ -105,6 +110,14 @@ it('停止中は取得せず、再検索中・停止中も前回結果を維持�
   expect(state.read).not.toHaveBeenCalled()
   rerender({ area: viewport, suspended: false })
   await waitFor(() => expect(result.current.data?.stores).toHaveLength(2))
+  expect(
+    client.getQueryData([
+      'stores',
+      'cloud',
+      'toilet-map-test',
+      searchAreaKey(viewport),
+    ]),
+  ).toBeDefined()
   const completions: ((value: typeof snapshot) => void)[] = []
   state.read.mockImplementation(
     () => new Promise((resolve) => completions.push(resolve)),
@@ -141,6 +154,19 @@ it('停止中は取得せず、再検索中・停止中も前回結果を維持�
     'beyond-3km',
     'outside',
   ])
+  unmount()
+  client.clear()
+})
+
+it('接続が無効なときはQueryからSDKを呼ばない', () => {
+  state.enabled = false
+  const client = createQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result, unmount } = renderHook(() => useStores(viewport), { wrapper })
+  expect(result.current.enabled).toBe(false)
+  expect(state.read).not.toHaveBeenCalled()
   unmount()
   client.clear()
 })

@@ -16,7 +16,25 @@ export function loadSeedEnvironment(
   return { ...files, ...shell }
 }
 
-export function parseAdminEmail(value: string | undefined): string | null {
-  if (!value?.trim()) return null
-  return z.email().parse(value.trim().toLowerCase())
+export function parseAdminCredentials(env: Record<string, string | undefined>) {
+  const email = env.ADMIN_EMAIL?.trim()
+  const password = env.ADMIN_PASSWORD
+  if (!email && !password) {
+    if (env.ADMIN_GOOGLE_EMAIL?.trim())
+      throw new Error(
+        'ADMIN_GOOGLE_EMAILは廃止しました。ADMIN_EMAILとADMIN_PASSWORDを指定してください。',
+      )
+    return null
+  }
+  if (!email || !password)
+    throw new Error('ADMIN_EMAILとADMIN_PASSWORDを両方指定してください。')
+  if (
+    !z.email().safeParse(email).success ||
+    password.length < 6 ||
+    password.length > 4096
+  )
+    throw new Error(
+      'ADMIN_EMAILの形式とADMIN_PASSWORD（6〜4096文字）を確認してください。',
+    )
+  return { email: email.toLowerCase(), password }
 }

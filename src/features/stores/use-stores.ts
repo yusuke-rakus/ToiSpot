@@ -4,8 +4,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { usesFirebaseEmulators } from '@/lib/firebase'
-import { fetchLocalStores } from './store-repository'
+import { firebaseEnabled, firebaseQueryScope } from '@/lib/firebase'
+import { fetchStores } from './store-repository'
 import type { StoreListResult } from './store-schema'
 import {
   isViewport,
@@ -18,9 +18,9 @@ export function useStores(area: SearchArea, suspended = false) {
   const [lastResult, setLastResult] = useState<StoreListResult>()
   const key = searchAreaKey(area)
   const query = useQuery({
-    queryKey: ['stores', 'emulator', 'demo-toilet-map', key],
-    queryFn: ({ signal }) => fetchLocalStores(area, signal),
-    enabled: usesFirebaseEmulators && !suspended,
+    queryKey: ['stores', ...firebaseQueryScope, key],
+    queryFn: ({ signal }) => fetchStores(area, signal),
+    enabled: firebaseEnabled && !suspended,
     placeholderData: isViewport(area) ? keepPreviousData : undefined,
   })
   // Queryのplaceholderは失敗時に消えるため、最後に成功した表示も保持する。
@@ -34,13 +34,13 @@ export function useStores(area: SearchArea, suspended = false) {
   useEffect(() => {
     if (suspended)
       void client.cancelQueries({
-        queryKey: ['stores', 'emulator', 'demo-toilet-map', key],
+        queryKey: ['stores', ...firebaseQueryScope, key],
         exact: true,
       })
   }, [client, key, suspended])
   return {
     ...query,
     data: isViewport(area) ? (query.data ?? lastResult) : query.data,
-    enabled: usesFirebaseEmulators,
+    enabled: firebaseEnabled,
   }
 }

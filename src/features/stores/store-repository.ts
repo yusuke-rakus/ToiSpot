@@ -9,7 +9,7 @@ import {
   endAt,
   type Firestore,
 } from 'firebase/firestore'
-import { getFirebaseServices, usesFirebaseEmulators } from '@/lib/firebase'
+import { getFirebaseServices } from '@/lib/firebase'
 import { parseStoreDocuments, STORE_DISPLAY_LIMIT } from './store-schema'
 import { geohashQueryBounds } from 'geofire-common'
 import {
@@ -77,12 +77,7 @@ export async function readStores(db: Firestore) {
   )
 }
 
-export async function fetchLocalStores(
-  area?: SearchArea,
-  signal?: AbortSignal,
-) {
-  if (!usesFirebaseEmulators)
-    throw new Error('Store browsing is restricted to the local emulator')
+export async function fetchStores(area?: SearchArea, signal?: AbortSignal) {
   const db = getFirebaseServices().db
   return area ? readNearbyStores(db, area, signal) : readStores(db)
 }
