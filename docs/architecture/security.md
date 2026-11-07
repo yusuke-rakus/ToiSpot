@@ -2,13 +2,15 @@
 
 [概要](../../README.md) · [文書一覧](../README.md)
 
-## 現在のローカル認証と権限
+## 現在の認証と権限
 
-一般利用者は認証不要。`stores/{storeId}`は公開読み取りとし、作成・更新は許可したGoogle管理者だけに認め、Place IDを必須にする。Place IDのない店舗と架空サンプルは拒否する。`placeLinks/{placeId}`は公開getのみ許可し、listは拒否する。紐付けの作成は管理者だけに許可し、店舗との対応を`getAfter`で相互検証する。紐付けの更新・削除、店舗の既存Place IDの変更・解除、サンプルとの紐付けは禁止する。店舗削除とサブコレクション、その他のコレクションは拒否する。店舗取得・認証・保存はEmulator接続時だけ有効で、クラウド接続時は無効にする。
+一般利用者は認証不要。`stores/{storeId}`は公開読み取りとし、作成・更新は許可UIDのパスワード認証を行った管理者だけに認め、Place IDを必須にする。Place IDのない店舗と架空サンプルは拒否する。`placeLinks/{placeId}`は公開getのみ許可し、listは拒否する。紐付けの作成は管理者だけに許可し、店舗との対応を`getAfter`で相互検証する。紐付けの更新・削除、店舗の既存Place IDの変更・解除、サンプルとの紐付けは禁止する。店舗削除とサブコレクション、その他のコレクションは拒否する。店舗取得・認証・保存はEmulatorと設定済みクラウドの両方で有効にする。通常の開発はEmulatorを既定とし、クラウド接続は明示的なfalse指定と設定4項目を必要とする。設定不備とE2EモードではSDKを初期化しない。
 
-Googleプロバイダー、`email_verified=true`、許可メールとの一致をRulesで照合する。許可メールは`ADMIN_GOOGLE_EMAIL`からシードが読み込み、非公開の`_settings/admin`へ保存する。このドキュメントのgetは一致する管理者だけ、listとクライアントの書き込みは全員拒否する。ブラウザでの判定に加え、保存リクエストごとにRulesで判定するため、管理者の設定変更後は旧アカウントの書き込みが拒否される。
+認証プロバイダー`password`と、`request.auth.uid`が非公開設定`_settings/admin.uid`に一致することをRulesで照合する。メールの所有確認や`email_verified`は管理者判定に用いない。Authユーザーの存在やメールの一致だけでは編集できない。設定欠落・旧`{ email }`形式・別UID・Google認証は拒否する。設定のgetは一致する管理者だけに許可し、listとクライアントの書き込みは全員拒否する。ブラウザでも同条件を判定するが、保存リクエストごとにRulesで再判定し、設定変更後の旧UIDの書き込みを拒否する。
 
-サンプルと管理者設定の投入には開発依存のFirebase Admin SDKを使う。Admin SDKはRulesを迂回するため、初期化前に`demo-toilet-map`・ローカル18081番へ固定する。店舗は未登録分だけをcreateし、既存データは変更しない。管理者設定は指定時にだけ作成・更新する。クラウドのRules変更・デプロイは行っていない。
+ローカルは`ADMIN_EMAIL`・`ADMIN_PASSWORD`をシードが読み、Authユーザーの作成・パスワード更新後、そのUIDを管理者設定へ保存する。指定時のみ更新し、未指定では既存設定を維持する。本番はIAM権限を持つ担当者がConsoleでユーザーを登録し、UIDを設定する。
+
+シードには開発依存のFirebase Admin SDKを使う。SDK初期化前に`demo-toilet-map`とローカルのAuth 19090番・Firestore 18081番へ接続を固定し、クラウドへのフォールバックを防ぐ。既存ユーザーのUIDと店舗データを保持し、無効ユーザーを再有効化しない。クラウドの設定変更・デプロイは行っていない。
 
 店舗のフィールド・型・列挙値・座標範囲・設備数と日時をRulesで検証する。作成・更新日時にはサーバー時刻を要求し、更新時の作成日時とサンプル識別の変更は禁止する。新規登録からサンプル識別を有効化できない。geohashの座標との対応はクライアントが生成し、Rulesは文字列形式を検証する。
 
@@ -16,20 +18,18 @@ Rules・取得・シードの検証は別の `demo-toilet-map-tests` に分離�
 
 ## 認証の挙動と今後の公開準備
 
-2026-11-04に、本番でも管理者1名とし、Authenticationに事前登録したGoogleユーザーだけログイン可能にする方針を確定した。ユーザー自身の新規登録を禁止し、編集権限は引き続き`_settings/admin.email`・Googleプロバイダー・確認済みメールで照合する。Authユーザーの存在だけでは編集権限を与えない。設定と登録・交代の手順は[Firebaseへのデプロイ手順](../operations/deployment.md)を参照する。現時点では本番対応を実装・適用した状態ではない。
+2026-11-07に、本番・ローカルともメール・パスワード認証へ変更した。管理者1名・事前登録・新規登録禁止の方針は維持する。本番の設定と登録・交代・パスワード再設定は[Firebaseへのデプロイ手順](../operations/deployment.md)を参照する。本番での実認証・クラウド適用は未検証。
 
-- `GoogleAuthProvider`と`signInWithPopup`を使用する。Auth Emulatorの画面は模擬認証であり、実際のGoogleアカウントの所有確認ではない。ローカル専用として利用する。
-- 公開店舗情報は未ログインでも読み取り可能とする。
-- 書き込みは許可メール・Googleプロバイダー・確認済みメールの全条件を満たした管理者だけに許可する。ログイン済みという条件だけでは許可しない。
-- 別の認証アカウントがAPI経由で作られても、管理者の編集権限を得られないようにする。登録画面を設けないことだけを防御にしない。
-- 件数、座標、区分などのデータ検証は、画面とSecurity Rulesの両方で行う。
-- パスワードは使用しない。管理者メールにも`VITE_`を付けず、シード専用の設定とする。メール・トークン・生の認証エラーはログへ出力しない。
+- `signInWithEmailAndPassword`を両環境で使用する。通常の開発はAuth Emulator専用アカウントを使い、本番の認証情報は流用しない。
+- 公開店舗情報は未ログインでも読み取り可能。管理者の編集にはUIDと`password`の一致が必要。
+- アプリ内の新規登録・再設定画面は設けない。本番ではAuthのユーザー自身による新規登録を禁止し、API経由の登録も確認する。登録画面がないことだけを制限としない。
+- パスワードはFirebase SDKへ渡し、送信完了後はフォームから消去する。独自ストレージやFirestore、ログへ保存しない。シード用メール・パスワードにも`VITE_`を付けず、生の認証エラーやトークンは出力しない。
 - セッションは`browserSessionPersistence`で同じタブの再読み込みに保持し、タブを閉じると終了する。権限確認中・失敗時は閲覧のみ。対象外アカウントはサインアウトする。
 - ログアウト・アカウント切替前の非同期判定は破棄する。保存時の権限拒否では再判定し、フォーム入力は保持したまま保存を無効化する。
-- 管理者変更は環境変数を変更して再シードする。未指定は既存設定を維持するため、変数を消すだけでは権限を取り消さない。
-- 本番公開前に実FirebaseのGoogleプロバイダー設定、許可ドメイン、管理者識別・交代・紛失時の運用を確認する。
+- 本番の管理者交代は事前登録後に許可UIDを変更し、旧アカウントを無効化してセッションを失効させる。Authの停止だけでは既発行トークンが直ちに無効になるとは限らないため、緊急停止はRulesが参照する設定も削除・変更する。
+- 本番公開前にEmail/Passwordの設定、ユーザー登録制限、管理者交代・パスワード再設定とIAM復旧担当者を確認する。
 
-出典：[Google認証](https://firebase.google.com/docs/auth/web/google-signin)、[Auth Emulator](https://firebase.google.com/docs/emulator-suite/connect_auth)、[認証とRules](https://firebase.google.com/docs/rules/rules-and-auth)、[認証状態の永続化](https://firebase.google.com/docs/auth/web/auth-state-persistence)、[Security Rulesの基本](https://firebase.google.com/docs/rules/basics)。以前検討した方式の参考：[メール・パスワード認証](https://firebase.google.com/docs/auth/web/password-auth)。
+出典：[メール・パスワード認証](https://firebase.google.com/docs/auth/web/password-auth)、[Auth Emulator](https://firebase.google.com/docs/emulator-suite/connect_auth)、[認証とRules](https://firebase.google.com/docs/rules/rules-and-auth)、[認証状態の永続化](https://firebase.google.com/docs/auth/web/auth-state-persistence)、[ユーザーのセルフサービス制限](https://firebase.google.com/docs/auth/users#user_self-service)。
 
 ブラウザ用Maps APIキーは利用者から見えるため、秘密として隠す設計に依存しない。公開ドメインのHTTPリファラー制限と利用APIの制限を設定し、開発用と本番用を分ける。Firebaseの設定値とMapsキーは区別して管理する。
 

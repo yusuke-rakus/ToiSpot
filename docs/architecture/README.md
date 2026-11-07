@@ -4,23 +4,23 @@
 
 shadcn/uiとTailwind CSSはユーザー指定として確定。TanStackは適合するものの採用判断を委任されているため、QueryとRouterを採用する。2026-11-03の依頼により、前回の推奨技術も採用・依存関係導入済みとする。業務機能への組み込みが未完了のものは、導入済みと実装済みを区別する。
 
-| 用途                   | 技術                                        | 状況 | 理由・確認事項                                            |
-| ---------------------- | ------------------------------------------- | ---- | --------------------------------------------------------- |
-| 画面                   | React＋TypeScript＋Vite                     | 採用 | 静的配信できるWebアプリとして構成する                     |
-| UI                     | shadcn/ui                                   | 確定 | ボタン、入力、選択、ダイアログ、詳細パネルなどを統一する  |
-| CSS                    | Tailwind CSS                                | 確定 | レスポンシブなレイアウトとスタイルを実装する。4系を採用   |
-| データ取得・キャッシュ | TanStack Query（`@tanstack/react-query`）   | 採用 | Firestore取得結果、読込・失敗状態、保存後の更新を管理する |
-| 画面遷移・URL          | TanStack Router（`@tanstack/react-router`） | 採用 | 公開地図と管理画面を分け、URLの検索条件を型付きで管理する |
-| 配信                   | Firebase Hosting                            | 採用 | 初期版は標準ドメインを使い、独自ドメイン費用を避ける      |
-| 地図                   | Google Maps JavaScript API                  | 確定 | 独自データのピン表示と地図操作に使用する                  |
-| DB                     | Cloud Firestore Standard                    | 採用 | 店舗とトイレ情報を保存する                                |
-| DB配置                 | 東京リージョン                              | 候補 | 日本向けを想定。DB作成前に確定する                        |
-| 認証                   | Firebase Authentication                     | 採用 | 管理者1名のGoogle認証。ローカルはAuth Emulatorの模擬認証  |
-| 権限                   | Firestore Security Rules                    | 採用 | 管理者のUIDによる書き込み制限と入力検証                   |
+| 用途                   | 技術                                        | 状況 | 理由・確認事項                                                           |
+| ---------------------- | ------------------------------------------- | ---- | ------------------------------------------------------------------------ |
+| 画面                   | React＋TypeScript＋Vite                     | 採用 | 静的配信できるWebアプリとして構成する                                    |
+| UI                     | shadcn/ui                                   | 確定 | ボタン、入力、選択、ダイアログ、詳細パネルなどを統一する                 |
+| CSS                    | Tailwind CSS                                | 確定 | レスポンシブなレイアウトとスタイルを実装する。4系を採用                  |
+| データ取得・キャッシュ | TanStack Query（`@tanstack/react-query`）   | 採用 | Firestore取得結果、読込・失敗状態、保存後の更新を管理する                |
+| 画面遷移・URL          | TanStack Router（`@tanstack/react-router`） | 採用 | 公開地図と管理画面を分け、URLの検索条件を型付きで管理する                |
+| 配信                   | Firebase App Hosting                        | 採用 | 初期版は標準ドメインを使い、独自ドメイン費用を避ける                     |
+| 地図                   | Google Maps JavaScript API                  | 確定 | 独自データのピン表示と地図操作に使用する                                 |
+| DB                     | Cloud Firestore Standard                    | 採用 | 店舗とトイレ情報を保存する                                               |
+| DB配置                 | 東京リージョン                              | 候補 | 日本向けを想定。DB作成前に確定する                                       |
+| 認証                   | Firebase Authentication                     | 採用 | 管理者1名のメール・パスワード認証。ローカルはAuth Emulator専用アカウント |
+| 権限                   | Firestore Security Rules                    | 採用 | 管理者のUIDによる書き込み制限と入力検証                                  |
 
-初期版はブラウザからFirebaseのモジュラーSDKで接続し、専用バックエンド、Cloud Functions、App Hostingを使わない案とする。独自のHTTP APIは現時点で設けない。
+初期版はブラウザからFirebaseのモジュラーSDKで接続し、データ操作用の専用バックエンドやCloud Functionsは使わない。配信はApp Hostingを使用し、Node.jsサーバーがViteの静的ファイルを配信する。独自のHTTP APIは現時点で設けない。
 
-現在はローカルEmulator限定の店舗表示、Google模擬ログイン、管理者による店舗登録・編集を実装している。`firebase-admin`は開発用サンプルと非公開の管理者設定の投入に使用し、配信するブラウザのコードには含めない。現在地から半径3kmの周辺検索を実装済み。クラウド接続は未実装。
+店舗表示・メール・パスワード認証・管理者による登録編集は、ローカルEmulatorと設定済みクラウドで利用できる。ローカルはAuth Emulator専用アカウントを使う。`firebase-admin`は開発用サンプルと非公開の管理者設定の投入に使用し、配信するブラウザのコードには含めない。現在地から半径3kmの周辺検索を実装済み。本番接続とGitHub Actionsは実装済み。本番のメール・パスワード認証とクラウド設定・公開の確認は別途必要。
 
 ## 追加技術（採用・依存関係導入済み）
 

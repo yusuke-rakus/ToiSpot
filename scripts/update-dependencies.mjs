@@ -44,7 +44,7 @@ lines.push(
   '## 組み込み状況',
   '',
   '- 起動基盤に接続済み：React、Vite、Tailwind、shadcn/uiの基本部品、TanStack Query・Router。',
-  '- Firebase：Emulatorから店舗を取得し、Google模擬認証と管理者の登録編集を実装。firebase-adminは開発用シードにだけ使用し、ブラウザには含めない。',
+  '- Firebase：Emulatorから店舗を取得し、メール・パスワード認証と管理者の登録編集を実装。firebase-adminは開発用シードにだけ使用し、ブラウザには含めない。',
   '- React Hook Form・Zod：Firebase設定と共有の店舗・フォームスキーマで使用。shadcn/uiのDialog内で登録編集フォームを実装。',
   '- 地図ラッパー：地図・現在地・地点選択、登録店舗とPlaces検索のピン・一覧・詳細を実装。geofire-commonはgeohash生成・半径3kmの周辺検索・距離順の表示に使用。',
   '- テスト・静的検査：基盤・店舗表示・シード・認証と権限・登録編集・取得上限・不正データ・Rulesを検証。',

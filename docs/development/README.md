@@ -49,11 +49,13 @@ Authアカウント・Firestoreデータは正常停止時にDockerの名前付�
 
 Rules・インデックス・Docker用設定は読み取り専用でマウントする。設定変更後は `docker compose restart firebase`、Dockerfile・起動スクリプト変更後は `pnpm emulators` で再ビルドする。
 
-`docker/firebase.json` はDocker専用で、ルートの `firebase.json` はホストでのEmulator実行・将来のHosting設定用。Dockerを使わず起動する場合はJava 21以上を準備して `pnpm emulators:local` を実行する。Docker版と同時には起動しない。
+`docker/firebase.json` はDocker専用で、ルートの `firebase.json` はホストでのEmulator実行・本番Hosting設定用。Dockerを使わず起動する場合はJava 21以上を準備して `pnpm emulators:local` を実行する。Docker版と同時には起動しない。
 
-管理者ログイン・登録編集は[管理者機能の手順](admin.md)を参照する。`ADMIN_GOOGLE_EMAIL`を設定して`pnpm seed`を実行し、`/admin-login`の「Googleでログイン」から模擬Googleアカウントを選択する。環境変数の優先順位は`.env`→`.env.local`→シェル。未指定時は既存の管理者設定を保持する。
+管理者ログイン・登録編集は[管理者機能の手順](admin.md)を参照する。`ADMIN_EMAIL`・`ADMIN_PASSWORD`を設定して`pnpm seed`を実行し、`/admin-login`で同じメール・パスワードを入力する。シードはAuthユーザーと管理者UIDを設定する。環境変数の優先順位は`.env`→`.env.local`→シェル。両方未指定時は管理者設定を保持し、片方だけの指定はエラーにする。旧`ADMIN_GOOGLE_EMAIL`は新しい2項目へ置き換える。
 
-`VITE_USE_FIREBASE_EMULATORS=false` は将来のクラウド接続用で、店舗取得・ログイン・保存は無効になる。各データアクセス関数もクラウドへのアクセスを拒否する。Firebaseの設定とは別に、Mapsのキー設定時は地図表示が始まる。
+`VITE_USE_FIREBASE_EMULATORS=false`とFirebase設定4項目を明示すると、クラウドの店舗取得・メール・パスワード認証・保存を利用できる。設定不備ではSDKを初期化せず、画面に案内する。未指定時はEmulatorを既定とする。`e2e`モードは実設定があってもFirebase接続を無効にする。Mapsのキー設定はFirebaseとは独立する。
+
+`pnpm build`と`pnpm check`は既存のローカル検証用。本番用は`pnpm build:production`で、Viteのproduction環境変数を読み、Emulator無効指定・Firebase設定4項目・実プロジェクトID・Mapsキー・本番Map IDを検査してからビルドする。ActionsはSecretsをビルド時だけ渡す。詳細は[公開手順](../operations/deployment.md)を参照する。
 
 ## 検証コマンド
 
@@ -72,7 +74,7 @@ Rules・インデックス・Docker用設定は読み取り専用でマウント
 | `pnpm format`            | Prettierで整形                                                                    |
 | `pnpm test:e2e`          | PC・モバイルサイズでPlaywrightを実行                                              |
 | `pnpm test:rules`        | ホストのJavaでAuth・Firestore Emulatorを起動し、認証・権限テストを実行して終了    |
-| `pnpm test:rules:docker` | 起動済みDockerのFirestoreに接続して権限テストを実行                               |
+| `pnpm test:rules:docker` | DockerのFirestoreと専用Auth Emulator（19091番）で認証・権限を検証                 |
 
 ブラウザテストの初回のみ実行する。
 
@@ -96,28 +98,28 @@ pnpm test:rules
 
 ## ソースの役割
 
-| 場所                                    | 役割                                                           |
-| --------------------------------------- | -------------------------------------------------------------- |
-| `src/main.tsx`・`src/app.tsx`           | React、Query、Routerの起動                                     |
-| `src/router.tsx`                        | 地図画面、404、型付きルート。自動プリロードは無効              |
-| `src/lib/query-client.ts`               | 自動再取得・再試行を抑えたQuery設定                            |
-| `src/lib/firebase.ts`                   | 遅延初期化、環境変数検証、Emulator接続                         |
-| `src/components/ui/`・`components.json` | shadcn/uiのコンポーネントと設定                                |
-| `src/index.css`                         | Tailwind CSS、共通UIトークン                                   |
-| `tests/`                                | 検証のセットアップ、ブラウザテスト、権限テスト                 |
-| `firestore.rules`                       | 公開読み取りとGoogle管理者の作成・更新を許可し、入力も検証     |
-| `src/features/auth/`                    | セッション準備・模擬Googleログイン・管理者判定・ログアウト     |
-| `src/features/stores/`                  | 共有スキーマ・取得・Query・一覧・詳細・店舗ピン                |
-| `scripts/seed.ts`・`scripts/lib/`       | ローカル限定のテスト店舗・紐付け・管理者設定の投入と旧店舗整理 |
-| `scripts/data/stores.json`              | 万願寺周辺のテスト店舗7件の保存データ                          |
+| 場所                                    | 役割                                                               |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `src/main.tsx`・`src/app.tsx`           | React、Query、Routerの起動                                         |
+| `src/router.tsx`                        | 地図画面、404、型付きルート。自動プリロードは無効                  |
+| `src/lib/query-client.ts`               | 自動再取得・再試行を抑えたQuery設定                                |
+| `src/lib/firebase.ts`                   | 遅延初期化、環境変数検証、Emulator接続                             |
+| `src/components/ui/`・`components.json` | shadcn/uiのコンポーネントと設定                                    |
+| `src/index.css`                         | Tailwind CSS、共通UIトークン                                       |
+| `tests/`                                | 検証のセットアップ、ブラウザテスト、権限テスト                     |
+| `firestore.rules`                       | 公開読み取りと許可UIDの管理者の作成・更新を許可し、入力も検証      |
+| `src/features/auth/`                    | セッション準備・メール・パスワードログイン・管理者判定・ログアウト |
+| `src/features/stores/`                  | 共有スキーマ・取得・Query・一覧・詳細・店舗ピン                    |
+| `scripts/seed.ts`・`scripts/lib/`       | ローカル限定のテスト店舗・紐付け・管理者設定の投入と旧店舗整理     |
+| `scripts/data/stores.json`              | 万願寺周辺のテスト店舗7件の保存データ                              |
 
 ## 実装済みと接続待ち
 
-Query・Router・Tailwindと基本UI、地図・現在地・コンビニ選択、Firestoreのスキーマ・店舗表示、Google模擬ログインと登録編集フォームを実装済み。geofire-commonで現在地から半径3kmの周辺検索を実装済み。クラウド接続は今後実装する。業務画面の実装状況は[ロードマップ](implementation.md)を参照する。
+Query・Router・Tailwindと基本UI、地図・現在地・コンビニ選択、Firestoreのスキーマ・店舗表示、メール・パスワードログインと登録編集フォームを実装済み。geofire-commonで現在地から半径3kmの周辺検索を実装済み。本番接続・本番ビルド・Actionsは実装済みで、クラウド設定と本番のメール・パスワード認証・公開後の検証は別途行う。業務画面の実装状況は[ロードマップ](implementation.md)を参照する。
 
 出典：[Viteの環境要件](https://vite.dev/guide/)、[Firebase Emulatorの導入](https://firebase.google.com/docs/emulator-suite/install_and_configure)。
 
-他プロジェクトとの同時起動時に8080・9099・4000が使用されていたため、Firestoreは18081、Authは19090、UIは14001を採用した。ポートを変更する場合は `compose.yaml`・`docker/firebase.json`・`firebase.json`・`src/lib/firebase.ts` と、`package.json` の `test:rules:docker` の接続先を合わせて更新する。
+他プロジェクトとの同時起動時に8080・9099・4000が使用されていたため、Firestoreは18081、Authは19090、UIは14001を採用した。テスト専用Authは`tests/firebase-auth.json`で19091番（hub 14401番、logging 14501番）に分離し、`test:rules:docker`が起動・停止する。開発用Authのユーザーを変更しない。ポートを変更する場合は `compose.yaml`・`docker/firebase.json`・`firebase.json`・`src/lib/firebase.ts` と、`package.json` の `test:rules:docker` の接続先を合わせて更新する。
 
 データ保存方式は[Firebase CLIのimport・export設定](https://firebase.google.com/docs/emulator-suite/install_and_configure)を参照する。
 

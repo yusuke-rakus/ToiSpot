@@ -12,7 +12,7 @@ pnpm seed
 pnpm dev
 ```
 
-`pnpm seed`は現在の万願寺周辺のテスト店舗7件を`stores`へ、Place IDの紐付けを`placeLinks`へ投入する。データは`scripts/data/stores.json`に保存してあり、空のEmulatorでも再現できる。`ADMIN_GOOGLE_EMAIL`を指定した場合は管理者メール設定も作成・更新する。
+`pnpm seed`は現在の万願寺周辺のテスト店舗7件を`stores`へ、Place IDの紐付けを`placeLinks`へ投入する。データは`scripts/data/stores.json`に保存してあり、空のEmulatorでも再現できる。`ADMIN_EMAIL`・`ADMIN_PASSWORD`を両方指定した場合はAuthユーザーと管理者UID設定も作成・更新する。詳しくは[管理者機能](admin.md)を参照する。
 
 店名・住所・座標・Place IDは2026年11月3日のPlaces検索時の情報で、貸出状況・設備数は動作確認用の架空設定。備考の「テストデータ・実地未確認」を保持する。利用不可の設備数はすべてnullとし、設備区分・最終確認日・利用条件専用項目は保存しない。旧来の架空店舗6件とは別で、実在のPlace IDを持ち、`isSample`はfalseとする。
 
