@@ -1,0 +1,127 @@
+name: Deploy to Firebase App Hosting
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: firebase-production
+  cancel-in-progress: false
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+      FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check documentation, types, lint and unit tests
+        run: |
+          pnpm docs:check
+          pnpm format:check
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm test:server
+          pnpm test:deploy
+
+      - name: Test Firestore Rules with emulators
+        run: pnpm test:rules
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test browser flows without external services
+        run: pnpm test:e2e
+
+      - name: Validate deployment target
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_HOSTING_BACKEND_ID: ${{ vars.FIREBASE_APP_HOSTING_BACKEND_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert(process.env.FIREBASE_PROJECT_ID?.trim(), 'FIREBASE_PROJECT_ID is required')
+          assert(process.env.FIREBASE_APP_HOSTING_BACKEND_ID?.trim(), 'FIREBASE_APP_HOSTING_BACKEND_ID is required')
+          NODE
+
+      - name: Write deployment credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          assert(process.env.FIREBASE_SERVICE_ACCOUNT?.trim(), 'FIREBASE_SERVICE_ACCOUNT is required')
+          let account
+          try {
+            account = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+          } catch {
+            throw new Error('FIREBASE_SERVICE_ACCOUNT must be valid JSON')
+          }
+          assert.equal(account.type, 'service_account')
+          assert.equal(account.project_id, process.env.FIREBASE_PROJECT_ID)
+          assert(typeof account.client_email === 'string' && account.client_email.length > 0, 'Invalid service account email')
+          assert(typeof account.private_key === 'string' && account.private_key.includes('BEGIN PRIVATE KEY'), 'Invalid service account key')
+          writeFileSync(join(process.env.RUNNER_TEMP, 'firebase-service-account.json'),
+            JSON.stringify(account), { mode: 0o600 })
+          NODE
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Sync GitHub Secrets to App Hosting
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_HOSTING_BACKEND_ID: ${{ vars.FIREBASE_APP_HOSTING_BACKEND_ID }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_GOOGLE_MAPS_MAP_ID: ${{ secrets.VITE_GOOGLE_MAPS_MAP_ID }}
+          CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: ${{ runner.temp }}/firebase-service-account.json
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: node scripts/sync-apphosting-secrets.mjs
+
+      - name: Deploy Firestore Rules and indexes
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: pnpm exec firebase deploy --only firestore:rules,firestore:indexes --project "$FIREBASE_PROJECT_ID" --non-interactive
+
+      # Build with Secret Manager references and Git-managed search settings.
+      # Disable automatic rollouts on the backend so this workflow gates production.
+      - name: Deploy App Hosting
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_HOSTING_BACKEND_ID: ${{ vars.FIREBASE_APP_HOSTING_BACKEND_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: >-
+          pnpm exec firebase apphosting:rollouts:create "$FIREBASE_APP_HOSTING_BACKEND_ID"
+          --git-commit "$GITHUB_SHA" --project "$FIREBASE_PROJECT_ID"
+          --force --non-interactive
+
+      - name: Remove deployment credentials
+        if: ${{ always() }}
+        run: rm -f -- "$RUNNER_TEMP/firebase-service-account.json"

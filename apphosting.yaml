@@ -1,0 +1,58 @@
+# Public VITE_* values are embedded into the browser bundle at build time.
+# Actions syncs the six project-specific GitHub Secrets to Secret Manager.
+# Keep only references here. Never add ADMIN_* credentials.
+scripts:
+  buildCommand: pnpm build:production
+  runCommand: node scripts/serve.mjs
+
+outputFiles:
+  serverApp:
+    include: [dist, scripts/serve.mjs, package.json]
+
+runConfig:
+  minInstances: 0
+  maxInstances: 1
+
+env:
+  - variable: VITE_USE_FIREBASE_EMULATORS
+    value: 'false'
+    availability: [BUILD]
+
+  # Firebase Web app configuration (required).
+  - variable: VITE_FIREBASE_API_KEY
+    secret: VITE_FIREBASE_API_KEY
+    availability: [BUILD]
+  - variable: VITE_FIREBASE_AUTH_DOMAIN
+    secret: VITE_FIREBASE_AUTH_DOMAIN
+    availability: [BUILD]
+  - variable: VITE_FIREBASE_PROJECT_ID
+    secret: VITE_FIREBASE_PROJECT_ID
+    availability: [BUILD]
+  - variable: VITE_FIREBASE_APP_ID
+    secret: VITE_FIREBASE_APP_ID
+    availability: [BUILD]
+
+  # Production Maps key and JavaScript Map ID (required; not DEMO_MAP_ID).
+  - variable: VITE_GOOGLE_MAPS_API_KEY
+    secret: VITE_GOOGLE_MAPS_API_KEY
+    availability: [BUILD]
+  - variable: VITE_GOOGLE_MAPS_MAP_ID
+    secret: VITE_GOOGLE_MAPS_MAP_ID
+    availability: [BUILD]
+
+  # Places search settings. Keep the same defaults as .env.example.
+  - variable: VITE_PLACES_AUTO_SEARCH
+    value: 'false'
+    availability: [BUILD]
+  - variable: VITE_PLACES_EXPANDED_SEARCH
+    value: 'true'
+    availability: [BUILD]
+  - variable: VITE_PLACES_MIN_ZOOM
+    value: '13'
+    availability: [BUILD]
+  - variable: VITE_PLACES_MAX_RESULTS
+    value: '20'
+    availability: [BUILD]
+  - variable: VITE_PLACES_MAX_REQUESTS
+    value: '1'
+    availability: [BUILD]
