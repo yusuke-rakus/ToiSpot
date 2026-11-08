@@ -1,26 +1,31 @@
+function pinFilename(name: string) {
+  const normalized = name
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{Dash}]/gu, '')
+  if (/^(セブンー?イレブン|7eleven|seveneleven)/.test(normalized))
+    return 'seven-eleven.svg'
+  if (/^(ローソン|lawson)/.test(normalized)) return 'lawson.svg'
+  if (/^(ファミリーマート|familymart)/.test(normalized)) return 'familymart.svg'
+  return 'convenience-store.svg'
+}
+
 export function MapMarkerPin({
+  name,
   selected,
-  registered,
 }: {
+  name: string
   selected: boolean
-  registered: boolean
 }) {
   return (
-    <svg
+    <img
       className="map-marker-pin"
       data-selected={selected}
-      data-registered={registered}
+      src={`${import.meta.env.BASE_URL}icons/map-pins/${pinFilename(name)}`}
       width="28"
-      height="38"
-      viewBox="0 0 28 38"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M14 37C11 30 1 24 1 14a13 13 0 0 1 26 0c0 10-10 16-13 23Z"
-        fill="currentColor"
-      />
-      <circle cx="14" cy="14" r="5" />
-    </svg>
+      height="36"
+      alt=""
+      draggable={false}
+    />
   )
 }

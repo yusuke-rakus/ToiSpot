@@ -751,7 +751,10 @@ describe('Placesのピンと登録情報', () => {
       name: `${place.name}・データなし`,
     })
     expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
-    expect(pin.firstChild).toHaveAttribute('data-registered', 'false')
+    expect(pin.firstChild).toHaveAttribute(
+      'src',
+      '/icons/map-pins/convenience-store.svg',
+    )
     await user.click(pin)
     expect(pin.firstChild).toHaveAttribute('data-selected', 'true')
     expect(screen.getByText('トイレ情報：データなし')).toBeVisible()
@@ -784,6 +787,7 @@ describe('Placesのピンと登録情報', () => {
     const store = {
       ...createTestStores('2026-11-03T00:00:00.000Z')[4].data,
       id: 'outside-limit',
+      chainName: 'Ｆａｍｉｌｙ Ｍａｒｔ',
       googlePlaceId: place.id,
       isSample: false,
     }
@@ -795,9 +799,12 @@ describe('Placesのピンと登録情報', () => {
     expect(
       screen.queryByRole('button', { name: `${place.name}・データなし` }),
     ).not.toBeInTheDocument()
-    await userEvent.click(
-      screen.getByRole('button', { name: `${store.name}・利用可` }),
+    const pin = screen.getByRole('button', { name: `${store.name}・利用可` })
+    expect(pin.firstChild).toHaveAttribute(
+      'src',
+      '/icons/map-pins/familymart.svg',
     )
+    await userEvent.click(pin)
     expect(screen.getByRole('article', { name: '店舗の詳細' })).toBeVisible()
     expect(screen.queryByText('トイレ情報：データなし')).not.toBeInTheDocument()
   })

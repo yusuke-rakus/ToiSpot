@@ -19,7 +19,7 @@ export function StoreMarkers({
       onClick={() => onSelect(store.id)}
       zIndex={store.id === selectedId ? 10 : 1}
     >
-      <MapMarkerPin selected={store.id === selectedId} registered />
+      <MapMarkerPin name={store.chainName} selected={store.id === selectedId} />
     </AdvancedMarker>
   ))
 }

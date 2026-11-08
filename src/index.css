@@ -151,45 +151,18 @@
 }
 
 .map-marker-pin {
-  --pin-border: #6b7280;
-  --pin-glyph: #ffffff;
   display: block;
-  overflow: visible;
-  color: #9ca3af;
   transform: scale(1);
   transform-origin: 50% 100%;
-  transition:
-    transform 220ms ease-out,
-    color 220ms ease-out;
-}
-
-.map-marker-pin[data-registered='true'] {
-  --pin-border: #0f172b;
-  --pin-glyph: #0f172b;
-  color: #ffffff;
+  transition: transform 220ms ease-out;
 }
 
 .map-marker-pin[data-selected='true'] {
-  --pin-border: var(--color-rose-600);
-  --pin-glyph: #ffffff;
-  color: var(--color-rose-600);
   transform: scale(1.3);
 }
 
-.map-marker-pin path {
-  stroke: var(--pin-border);
-  transition: stroke 220ms ease-out;
-}
-
-.map-marker-pin circle {
-  fill: var(--pin-glyph);
-  transition: fill 220ms ease-out;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .map-marker-pin,
-  .map-marker-pin path,
-  .map-marker-pin circle {
+  .map-marker-pin {
     transition: none;
   }
 

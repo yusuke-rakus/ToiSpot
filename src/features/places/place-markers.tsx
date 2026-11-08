@@ -22,8 +22,8 @@ export function PlaceMarkers({
         zIndex={entry.place!.id === selectedId ? 10 : 0}
       >
         <MapMarkerPin
+          name={entry.name}
           selected={entry.place!.id === selectedId}
-          registered={false}
         />
       </AdvancedMarker>
     ))

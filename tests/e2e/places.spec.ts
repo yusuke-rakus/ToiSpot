@@ -5,13 +5,13 @@ const store = {
   ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
   id: 'confirmed',
   name: '確認済みコンビニ',
-  chainName: 'テストチェーン',
+  chainName: 'セブン-イレブン',
   address: '独自に確認した住所',
   location: { lat: 35.684, lng: 139.755 },
   isSample: false,
 }
 
-test('周辺コンビニのグレーピン・詳細・手動検索を外部通信なしで操作できる', async ({
+test('周辺コンビニのチェーン別ピン・詳細・手動検索を外部通信なしで操作できる', async ({
   page,
 }, testInfo) => {
   const externalRequests: string[] = []
@@ -70,7 +70,7 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
                 places: [
                   {
                     id: 'ChIJ_mock',
-                    displayName: '未調査のコンビニ',
+                    displayName: 'ローソン テスト店',
                     formattedAddress: 'Googleから取得した住所',
                     location: { toJSON: () => ({ lat: 35.678, lng: 139.78 }) },
                     attributions: [],
@@ -90,9 +90,21 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   const registeredPin = page.getByRole('button', {
     name: '確認済みコンビニ・利用可',
   })
-  const pin = page.getByRole('button', { name: '未調査のコンビニ・データなし' })
+  const pin = page.getByRole('button', {
+    name: 'ローソン テスト店・データなし',
+  })
+  const pinImage = pin.locator('img')
+  const registeredImage = registeredPin.locator('img')
+  const lawsonIcon = '/icons/map-pins/lawson.svg'
+  const sevenElevenIcon = '/icons/map-pins/seven-eleven.svg'
   await expect(pin).toBeVisible()
-  await expect(pin.locator('svg')).toHaveCSS('color', 'rgb(156, 163, 175)')
+  await expect(pinImage).toHaveAttribute('src', lawsonIcon)
+  await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
+  for (const image of [pinImage, registeredImage]) {
+    await expect
+      .poll(() => image.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+      .toBe(240)
+  }
   await expect(list.locator('li')).toHaveCount(mobile ? 0 : 2)
   await expect(sheet).toHaveCount(0)
   if (mobile) {
@@ -108,25 +120,13 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   }
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await expect(page.getByText('Googleから取得した住所')).toBeVisible()
-  const rose600 = await page.evaluate(() => {
-    const probe = document.createElement('span')
-    probe.style.color = 'var(--color-rose-600)'
-    document.body.append(probe)
-    const color = getComputedStyle(probe).color
-    probe.remove()
-    return color
-  })
-  await expect(pin.locator('svg')).toHaveCSS('color', rose600)
-  await expect(pin.locator('svg')).toHaveCSS(
-    'transform',
-    'matrix(1.3, 0, 0, 1.3, 0, 0)',
-  )
-  await expect(pin.locator('svg')).toHaveCSS(
-    'transition-property',
-    'transform, color',
-  )
+  await expect(pinImage).toHaveAttribute('src', lawsonIcon)
+  await expect(pinImage).toHaveCSS('transform', 'matrix(1.3, 0, 0, 1.3, 0, 0)')
+  await expect(pinImage).toHaveCSS('transition-property', 'transform')
+  await expect(pinImage).toHaveCSS('transition-duration', '0.22s')
+  await expect(pinImage).toHaveCSS('transition-timing-function', 'ease-out')
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await expect(pin.locator('svg')).toHaveCSS('transition-property', 'none')
+  await expect(pinImage).toHaveCSS('transition-property', 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await expect(
     page.getByRole('button', { name: 'トイレ情報を登録' }),
@@ -163,13 +163,10 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
     await expect(
       sheet.getByRole('heading', { name: '確認済みコンビニ' }),
     ).toBeVisible()
-    await expect(pin.locator('svg')).toHaveAttribute('data-selected', 'false')
+    await expect(pinImage).toHaveAttribute('data-selected', 'false')
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
-    await expect(registeredPin.locator('svg')).toHaveAttribute(
-      'data-selected',
-      'false',
-    )
+    await expect(registeredImage).toHaveAttribute('data-selected', 'false')
     await pin.click()
   }
 
@@ -190,18 +187,15 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true)
-  await expect(pin.locator('svg')).toHaveCSS('color', 'rgb(156, 163, 175)')
-  await expect(pin.locator('svg')).toHaveCSS(
-    'transform',
-    'matrix(1, 0, 0, 1, 0, 0)',
-  )
+  await expect(pinImage).toHaveAttribute('src', lawsonIcon)
+  await expect(pinImage).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
   if (mobile) await registeredPin.click()
   else
     await page
       .getByRole('button', { name: '確認済みコンビニの詳細を見る' })
       .click()
-  await expect(registeredPin.locator('svg')).toHaveCSS('color', rose600)
-  await expect(registeredPin.locator('svg')).toHaveCSS(
+  await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
+  await expect(registeredImage).toHaveCSS(
     'transform',
     'matrix(1.3, 0, 0, 1.3, 0, 0)',
   )
@@ -211,11 +205,8 @@ test('周辺コンビニのグレーピン・詳細・手動検索を外部通�
   } else {
     await page.getByRole('button', { name: '一覧へ戻る' }).click()
   }
-  await expect(registeredPin.locator('svg')).toHaveCSS(
-    'color',
-    'rgb(255, 255, 255)',
-  )
-  await expect(registeredPin.locator('svg')).toHaveCSS(
+  await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
+  await expect(registeredImage).toHaveCSS(
     'transform',
     'matrix(1, 0, 0, 1, 0, 0)',
   )
