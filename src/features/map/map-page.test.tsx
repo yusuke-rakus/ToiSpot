@@ -321,8 +321,8 @@ describe('管理者操作と地図画面の連携', () => {
     expect(screen.getByText('登録店舗 7件')).toBeVisible()
     expect(maps.panTo).toHaveBeenLastCalledWith(place.location)
     expect(
-      screen.getByRole('button', { name: `${place.name}・利用可` }),
-    ).toBeVisible()
+      screen.getByRole('button', { name: `${place.name}・利用可` }).firstChild,
+    ).toHaveAttribute('src', '/icons/map-pins/seven-eleven.svg')
     await user.click(screen.getByRole('button', { name: '店舗を編集' }))
     expect(screen.getByLabelText('店名')).toHaveValue(place.name)
     expect(screen.getByLabelText('コンビニの種類')).toHaveValue(
@@ -753,7 +753,7 @@ describe('Placesのピンと登録情報', () => {
     expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
     expect(pin.firstChild).toHaveAttribute(
       'src',
-      '/icons/map-pins/convenience-store.svg',
+      '/icons/map-pins/neutral/convenience-store.svg',
     )
     await user.click(pin)
     expect(pin.firstChild).toHaveAttribute('data-selected', 'true')
@@ -772,9 +772,14 @@ describe('Placesのピンと登録情報', () => {
       linksQuery.isError = state === 'error'
       linksQuery.enabled = state !== 'disabled'
       render(<MapPage config={config} />)
-      await userEvent.click(
-        screen.getByRole('button', { name: /テストコンビニ・登録情報を確認/ }),
+      const pin = screen.getByRole('button', {
+        name: /テストコンビニ・登録情報を確認/,
+      })
+      expect(pin.firstChild).toHaveAttribute(
+        'src',
+        '/icons/map-pins/convenience-store.svg',
       )
+      await userEvent.click(pin)
       expect(
         screen.queryByText('トイレ情報：データなし'),
       ).not.toBeInTheDocument()

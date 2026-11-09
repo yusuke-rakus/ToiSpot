@@ -13,15 +13,18 @@ function pinFilename(name: string) {
 export function MapMarkerPin({
   name,
   selected,
+  neutral = false,
 }: {
   name: string
   selected: boolean
+  neutral?: boolean
 }) {
+  const directory = neutral ? 'icons/map-pins/neutral' : 'icons/map-pins'
   return (
     <img
       className="map-marker-pin"
       data-selected={selected}
-      src={`${import.meta.env.BASE_URL}icons/map-pins/${pinFilename(name)}`}
+      src={`${import.meta.env.BASE_URL}${directory}/${pinFilename(name)}`}
       width="28"
       height="36"
       alt=""
