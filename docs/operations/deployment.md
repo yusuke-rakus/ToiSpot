@@ -143,6 +143,18 @@ Firebase Web設定やMap ID自体は秘密の認証情報ではないが、プ�
 
 `apphosting.yaml`では`VITE_USE_FIREBASE_EMULATORS=false`、`VITE_PLACES_AUTO_SEARCH=false`、`VITE_PLACES_EXPANDED_SEARCH=true`、`VITE_PLACES_MIN_ZOOM=13`、`VITE_PLACES_MAX_RESULTS=100`、`VITE_PLACES_MAX_REQUESTS=9`を通常の`value`として管理する。すべて`availability: [BUILD]`とし、実行サーバーへは渡さない。変更後は新しいコミットをActionsでロールアウトする。
 
+### 地図からの管理者ログイン（任意）
+
+Firebase Consoleの「App Hosting → 対象バックエンド → Settings → Environment」で、次の3項目を標準環境変数として追加する。中心座標から指定した半径内をダブルクリックすると、管理者ログイン画面へ移動する。
+
+| 環境変数                         | 値                                |
+| -------------------------------- | --------------------------------- |
+| `VITE_ADMIN_LOGIN_LAT`           | 中心の緯度（−90〜90）             |
+| `VITE_ADMIN_LOGIN_LNG`           | 中心の経度（−180〜180）           |
+| `VITE_ADMIN_LOGIN_RADIUS_METERS` | 半径のメートル数（0より大きい値） |
+
+3項目のうち1つでも未設定、空欄、または不正なら、地図からの遷移は無効になる。値はViteのビルド時にブラウザ用JavaScriptへ埋め込まれる。変更後は新しいビルドをロールアウトする。ローカルでは`.env.local`に設定して開発サーバーを再起動する。 [App Hostingの環境変数の設定](https://firebase.google.com/docs/app-hosting/configure#manage_variables_and_secrets_in_backend_settings)
+
 ### デプロイ専用サービスアカウント
 
 対象プロジェクトに専用アカウントを作成し、次のロールを付与する。店舗データ編集やAuthユーザー管理の権限は不要。

@@ -1,5 +1,10 @@
 export type MapPoint = { lat: number; lng: number }
 
+export type AdminLoginArea = {
+  center: MapPoint
+  radiusMeters: number
+}
+
 export type PlacesConfig = {
   autoSearch: boolean
   expandedSearch: boolean
@@ -20,6 +25,7 @@ export type MapConfig = {
   apiKey: string
   mapId: string
   places?: PlacesConfig
+  adminLoginArea?: AdminLoginArea
 }
 
 // 現在地の取得前・拒否・失敗時は東京駅周辺を表示する。
@@ -36,6 +42,7 @@ export function getMapConfig(env: Record<string, unknown>): MapConfig {
       (typeof env.VITE_GOOGLE_MAPS_MAP_ID === 'string'
         ? env.VITE_GOOGLE_MAPS_MAP_ID.trim()
         : '') || 'DEMO_MAP_ID',
+    adminLoginArea: getAdminLoginArea(env),
     places: {
       autoSearch: booleanSetting(env.VITE_PLACES_AUTO_SEARCH, false),
       expandedSearch: booleanSetting(env.VITE_PLACES_EXPANDED_SEARCH, true),
@@ -44,6 +51,30 @@ export function getMapConfig(env: Record<string, unknown>): MapConfig {
       maxRequests: integerSetting(env.VITE_PLACES_MAX_REQUESTS, 9, 1),
     },
   }
+}
+
+function getAdminLoginArea(
+  env: Record<string, unknown>,
+): AdminLoginArea | undefined {
+  const lat = numberSetting(env.VITE_ADMIN_LOGIN_LAT)
+  const lng = numberSetting(env.VITE_ADMIN_LOGIN_LNG)
+  const radiusMeters = numberSetting(env.VITE_ADMIN_LOGIN_RADIUS_METERS)
+  if (
+    lat === undefined ||
+    Math.abs(lat) > 90 ||
+    lng === undefined ||
+    Math.abs(lng) > 180 ||
+    radiusMeters === undefined ||
+    radiusMeters <= 0
+  )
+    return undefined
+  return { center: { lat, lng }, radiusMeters }
+}
+
+function numberSetting(value: unknown) {
+  if (typeof value !== 'string' || value.trim() === '') return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function booleanSetting(value: unknown, fallback: boolean) {
