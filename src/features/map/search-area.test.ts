@@ -51,6 +51,34 @@ describe('自動検索の環境設定', () => {
   })
 })
 
+describe('地図からの管理者ログインの環境設定', () => {
+  const env = {
+    VITE_ADMIN_LOGIN_LAT: ' 0 ',
+    VITE_ADMIN_LOGIN_LNG: '-139.25',
+    VITE_ADMIN_LOGIN_RADIUS_METERS: '100.5',
+  }
+
+  it('座標と半径を数値として読み取る', () => {
+    expect(getMapConfig(env).adminLoginArea).toEqual({
+      center: { lat: 0, lng: -139.25 },
+      radiusMeters: 100.5,
+    })
+  })
+
+  it.each([
+    ['VITE_ADMIN_LOGIN_LAT', undefined],
+    ['VITE_ADMIN_LOGIN_LAT', '91'],
+    ['VITE_ADMIN_LOGIN_LNG', ' '],
+    ['VITE_ADMIN_LOGIN_LNG', '-181'],
+    ['VITE_ADMIN_LOGIN_RADIUS_METERS', '0'],
+    ['VITE_ADMIN_LOGIN_RADIUS_METERS', 'Infinity'],
+  ])('%s が %s なら無効にする', (key, value) => {
+    expect(
+      getMapConfig({ ...env, [key]: value }).adminLoginArea,
+    ).toBeUndefined()
+  })
+})
+
 describe('表示範囲', () => {
   const view: MapViewport = {
     center: { lat: 0, lng: 180 },

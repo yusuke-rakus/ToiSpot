@@ -14,7 +14,9 @@ import {
   useApiLoadingStatus,
   useMap,
   type MapCameraProps,
+  type MapMouseEvent,
 } from '@vis.gl/react-google-maps'
+import { useNavigate } from '@tanstack/react-router'
 import { CircleAlert, LocateFixed, MapPin, RotateCcw, X } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -52,6 +54,7 @@ import {
   INITIAL_CENTER,
   INITIAL_ZOOM,
   locationErrorMessage,
+  type AdminLoginArea,
   type MapConfig,
   type MapPoint,
   type PlacesConfig,
@@ -59,6 +62,7 @@ import {
 import {
   areaCenter,
   isViewport,
+  pointDistance,
   type MapViewport,
   type SearchArea,
 } from './search-area'
@@ -72,6 +76,7 @@ import { PlaceMarkers } from '../places/place-markers'
 
 const configFromEnv = getMapConfig(import.meta.env)
 const libraries = ['marker']
+const adminLoginClickIntervalMs = 1000
 // Tailwind の lg と同じ境界で、デスクトップではポータルを開かない。
 const mobileQuery = '(width < 64rem)'
 
@@ -102,6 +107,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   )
   const storesQuery = useStores(searchTarget, suspended)
   const admin = useAdmin()
+  const navigate = useNavigate()
   const [editor, setEditor] = useState<{
     target: StoreWriteTarget
     place?: ConveniencePlace
@@ -402,6 +408,14 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
                 stores={stores}
                 selectedStore={selectedStore}
                 onStoreSelect={selectStore}
+                adminLogin={
+                  config.adminLoginArea && admin.status !== 'admin'
+                    ? {
+                        ...config.adminLoginArea,
+                        open: () => void navigate({ to: '/admin-login' }),
+                      }
+                    : undefined
+                }
               />
             </APIProvider>
           ) : (
@@ -504,6 +518,7 @@ function MapCanvas({
   stores,
   selectedStore,
   onStoreSelect,
+  adminLogin,
 }: {
   onLocated: (point: MapPoint) => void
   onLocationFallback: () => void
@@ -519,6 +534,7 @@ function MapCanvas({
   stores: Store[]
   selectedStore: Store | null
   onStoreSelect: (id: string) => void
+  adminLogin?: AdminLoginArea & { open: () => void }
 }) {
   const { resolvedTheme } = useTheme()
   const status = useApiLoadingStatus()
@@ -553,6 +569,35 @@ function MapCanvas({
   const locatingRef = useRef(false)
   const [mapCenter, setMapCenter] = useState(INITIAL_CENTER)
   const searchGuard = useRef(false)
+  const adminLoginClickAt = useRef<number | null>(null)
+  const adminLoginOpening = useRef(false)
+
+  function handleAdminLoginClick(event: MapMouseEvent, doubleClick = false) {
+    const previousClick = adminLoginClickAt.current
+    adminLoginClickAt.current = null
+    const point = event.detail.latLng
+    if (
+      !adminLogin ||
+      adminLoginOpening.current ||
+      !point ||
+      pointDistance(adminLogin.center, point) > adminLogin.radiusMeters
+    )
+      return
+
+    const now = performance.now()
+    if (
+      doubleClick ||
+      (previousClick !== null &&
+        now - previousClick <= adminLoginClickIntervalMs)
+    ) {
+      adminLoginOpening.current = true
+      event.stop()
+      adminLogin.open()
+    } else {
+      adminLoginClickAt.current = now
+    }
+  }
+
   const viewportSearch = useViewportSearch({
     map,
     enabled: placesConfig.autoSearch,
@@ -673,7 +718,15 @@ function MapCanvas({
           setCamera({ center, zoom, heading, tilt })
           viewportSearch.onChange({ center, zoom, bounds })
         }}
-        onDragstart={viewportSearch.onDragStart}
+        onClick={adminLogin ? handleAdminLoginClick : undefined}
+        // click の発火順に関わらず、dblclick 自体も判定する。
+        onDblclick={
+          adminLogin ? (event) => handleAdminLoginClick(event, true) : undefined
+        }
+        onDragstart={() => {
+          adminLoginClickAt.current = null
+          viewportSearch.onDragStart()
+        }}
         reuseMaps
         clickableIcons={false}
         gestureHandling="greedy"

@@ -13,6 +13,7 @@ import {
   DEFAULT_PLACES_CONFIG,
   getMapConfig,
   locationErrorMessage,
+  type MapPoint,
 } from './map-config'
 import { createTestStores } from '../../../tests/fixtures/stores'
 import type { StoreListResult } from '../stores/store-schema'
@@ -34,6 +35,8 @@ const admin = vi.hoisted(() => ({
   logout: vi.fn(),
   refreshAccess: vi.fn(),
 }))
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 const writer = vi.hoisted(() => ({
   allocate: vi.fn(() => 'new-fixed'),
   save: vi.fn(),
@@ -108,6 +111,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   Map: ({
     children,
     onClick,
+    onDblclick,
     onTilesLoaded,
     onIdle,
     center,
@@ -119,6 +123,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   }: {
     children: ReactNode
     onClick?: (event: unknown) => void
+    onDblclick?: (event: unknown) => void
     onTilesLoaded: () => void
     onIdle: () => void
     center: { lat: number; lng: number }
@@ -179,15 +184,23 @@ vi.mock('@vis.gl/react-google-maps', () => ({
         </button>
       ))}
       <button
-        onClick={() =>
-          onClick?.({
-            detail: { latLng: { lat: 35.68, lng: 139.76 } },
-            stoppable: false,
-          })
-        }
+        onClick={() => onClick?.(mapClickEvent({ lat: 35.68, lng: 139.76 }))}
       >
         地図上の地点を選択
       </button>
+      {[
+        { name: '中心地点', latLng: { lat: 35, lng: 139 } },
+        { name: '半径内の地点', latLng: { lat: 35.0008, lng: 139 } },
+        { name: '半径外の地点', latLng: { lat: 35.001, lng: 139 } },
+      ].map(({ name, latLng }) => (
+        <button
+          key={name}
+          onClick={() => onClick?.(mapClickEvent(latLng))}
+          onDoubleClick={() => onDblclick?.(mapClickEvent(latLng))}
+        >
+          {name}を選択
+        </button>
+      ))}
       {children}
     </div>
   ),
@@ -210,6 +223,13 @@ vi.mock('@vis.gl/react-google-maps', () => ({
 }))
 
 const config = { apiKey: 'test-key-not-a-real-key', mapId: 'DEMO_MAP_ID' }
+
+function mapClickEvent(latLng: MapPoint) {
+  return {
+    detail: { latLng },
+    stop: vi.fn(),
+  }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -321,8 +341,8 @@ describe('管理者操作と地図画面の連携', () => {
     expect(screen.getByText('登録店舗 7件')).toBeVisible()
     expect(maps.panTo).toHaveBeenLastCalledWith(place.location)
     expect(
-      screen.getByRole('button', { name: `${place.name}・利用可` }),
-    ).toBeVisible()
+      screen.getByRole('button', { name: `${place.name}・利用可` }).firstChild,
+    ).toHaveAttribute('src', '/icons/map-pins/seven-eleven.svg')
     await user.click(screen.getByRole('button', { name: '店舗を編集' }))
     expect(screen.getByLabelText('店名')).toHaveValue(place.name)
     expect(screen.getByLabelText('コンビニの種類')).toHaveValue(
@@ -365,6 +385,77 @@ describe('管理者操作と地図画面の連携', () => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+})
+
+describe('地図からの管理者ログイン', () => {
+  const configWithAdminLogin = getMapConfig({
+    VITE_GOOGLE_MAPS_API_KEY: config.apiKey,
+    VITE_ADMIN_LOGIN_LAT: '35',
+    VITE_ADMIN_LOGIN_LNG: '139',
+    VITE_ADMIN_LOGIN_RADIUS_METERS: '100',
+  })
+
+  it('設定した半径内の地点だけダブルクリックでログイン画面を開く', () => {
+    render(<MapPage config={configWithAdminLogin} />)
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: '半径外の地点を選択' }),
+    )
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: '半径内の地点を選択' }),
+    )
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+  })
+
+  it('環境変数が未設定なら地図のダブルクリックで遷移しない', () => {
+    render(<MapPage config={config} />)
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: '中心地点を選択' }),
+    )
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it.each([0, 1, 2])(
+    'ダブルクリックの前に届くclickが%i回でも1回だけ遷移する',
+    (clicks) => {
+      render(<MapPage config={configWithAdminLogin} />)
+      const center = screen.getByRole('button', {
+        name: '中心地点を選択',
+      })
+      if (clicks >= 1) fireEvent.click(center)
+      expect(navigate).not.toHaveBeenCalled()
+      if (clicks === 2) fireEvent.click(center)
+      fireEvent.doubleClick(center)
+      expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+    },
+  )
+
+  it('半径外のクリックや1秒を超えた間隔で回数をリセットする', () => {
+    vi.useFakeTimers({ toFake: ['performance'] })
+    render(<MapPage config={configWithAdminLogin} />)
+    const center = screen.getByRole('button', {
+      name: '中心地点を選択',
+    })
+    fireEvent.click(center)
+    fireEvent.click(screen.getByRole('button', { name: '半径外の地点を選択' }))
+    fireEvent.click(center)
+    vi.advanceTimersByTime(1001)
+    fireEvent.click(center)
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.click(center)
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+  })
+
+  it('管理者としてログイン済みなら地図に留まる', () => {
+    admin.status = 'admin'
+    render(<MapPage config={configWithAdminLogin} />)
+    const center = screen.getByRole('button', {
+      name: '中心地点を選択',
+    })
+    fireEvent.click(center)
+    fireEvent.click(center)
+    expect(navigate).not.toHaveBeenCalled()
+  })
 })
 
 describe('地図の設定と失敗時の表示', () => {
@@ -753,7 +844,7 @@ describe('Placesのピンと登録情報', () => {
     expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
     expect(pin.firstChild).toHaveAttribute(
       'src',
-      '/icons/map-pins/convenience-store.svg',
+      '/icons/map-pins/neutral/convenience-store.svg',
     )
     await user.click(pin)
     expect(pin.firstChild).toHaveAttribute('data-selected', 'true')
@@ -772,9 +863,14 @@ describe('Placesのピンと登録情報', () => {
       linksQuery.isError = state === 'error'
       linksQuery.enabled = state !== 'disabled'
       render(<MapPage config={config} />)
-      await userEvent.click(
-        screen.getByRole('button', { name: /テストコンビニ・登録情報を確認/ }),
+      const pin = screen.getByRole('button', {
+        name: /テストコンビニ・登録情報を確認/,
+      })
+      expect(pin.firstChild).toHaveAttribute(
+        'src',
+        '/icons/map-pins/convenience-store.svg',
       )
+      await userEvent.click(pin)
       expect(
         screen.queryByText('トイレ情報：データなし'),
       ).not.toBeInTheDocument()

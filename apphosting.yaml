@@ -40,6 +40,17 @@ env:
     secret: VITE_GOOGLE_MAPS_MAP_ID
     availability: [BUILD]
 
+  # Optional map shortcut. Set all three values to enable it.
+  - variable: VITE_ADMIN_LOGIN_LAT
+    value: ''
+    availability: [BUILD]
+  - variable: VITE_ADMIN_LOGIN_LNG
+    value: ''
+    availability: [BUILD]
+  - variable: VITE_ADMIN_LOGIN_RADIUS_METERS
+    value: ''
+    availability: [BUILD]
+
   # Places search settings. Keep the same defaults as .env.example.
   - variable: VITE_PLACES_AUTO_SEARCH
     value: 'false'

@@ -95,7 +95,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   })
   const pinImage = pin.locator('img')
   const registeredImage = registeredPin.locator('img')
-  const lawsonIcon = '/icons/map-pins/lawson.svg'
+  const lawsonIcon = '/icons/map-pins/neutral/lawson.svg'
   const sevenElevenIcon = '/icons/map-pins/seven-eleven.svg'
   await expect(pin).toBeVisible()
   await expect(pinImage).toHaveAttribute('src', lawsonIcon)
@@ -121,7 +121,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await expect(page.getByText('Googleから取得した住所')).toBeVisible()
   await expect(pinImage).toHaveAttribute('src', lawsonIcon)
-  await expect(pinImage).toHaveCSS('transform', 'matrix(1.3, 0, 0, 1.3, 0, 0)')
+  await expect(pinImage).toHaveCSS('transform', 'matrix(1.5, 0, 0, 1.5, 0, 0)')
   await expect(pinImage).toHaveCSS('transition-property', 'transform')
   await expect(pinImage).toHaveCSS('transition-duration', '0.22s')
   await expect(pinImage).toHaveCSS('transition-timing-function', 'ease-out')
@@ -197,7 +197,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
   await expect(registeredImage).toHaveCSS(
     'transform',
-    'matrix(1.3, 0, 0, 1.3, 0, 0)',
+    'matrix(1.5, 0, 0, 1.5, 0, 0)',
   )
   if (mobile) {
     await sheet.getByRole('button', { name: 'トイレ情報を閉じる' }).click()

@@ -24,6 +24,7 @@ export function PlaceMarkers({
         <MapMarkerPin
           name={entry.name}
           selected={entry.place!.id === selectedId}
+          neutral={entry.registration === 'missing'}
         />
       </AdvancedMarker>
     ))

@@ -158,7 +158,7 @@
 }
 
 .map-marker-pin[data-selected='true'] {
-  transform: scale(1.3);
+  transform: scale(1.5);
 }
 
 @media (prefers-reduced-motion: reduce) {
