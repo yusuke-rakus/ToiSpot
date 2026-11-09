@@ -42,13 +42,13 @@ env:
 
   # Optional map shortcut. Set all three values to enable it.
   - variable: VITE_ADMIN_LOGIN_LAT
-    value: ''
+    value: '35.681236'
     availability: [BUILD]
   - variable: VITE_ADMIN_LOGIN_LNG
-    value: ''
+    value: '139.767125'
     availability: [BUILD]
   - variable: VITE_ADMIN_LOGIN_RADIUS_METERS
-    value: ''
+    value: '100'
     availability: [BUILD]
 
   # Places search settings. Keep the same defaults as .env.example.
