@@ -60,7 +60,7 @@ VITE_PLACES_MAX_REQUESTS=9
 
 - `src/features/map/map-page.tsx` が地図画面、`map-config.ts` が設定と初期位置を担当する。
 - APIProviderを1つにし、カメラ状態はReactで保持する。店舗選択では`panTo`で地図を店舗へ寄せ、詳細と強調表示を更新する。
-- `reuseMaps` を有効にし、同じMap IDの再マウント時に再利用を試みる。無制限の無料表示を保証するものではない。
+- `reuseMaps` を有効にし、同じMap IDの再マウント時に再利用を試みる。ログイン画面から戻るとき、描画済みの地図を再利用できればタイルの描画完了通知を待たずに表示する。無制限の無料表示を保証するものではない。
 - 現在地は画面内の状態だけに保持し、DB・端末ストレージには保存しない。現在地を取得して地図を移動すると、その地域の地図をGoogleから読み込む。
 - Places API（New）のNearby Searchでコンビニを取得する。Geocoding API・Routes APIは使用しない。管理者が選択して登録した店舗に限り、Place ID・店名・住所・座標と入力したトイレ情報をFirestoreに保存する。
 - 店舗の取得は `src/features/stores/` に集約し、TanStack Queryで結果を共有する。読み込み・0件・接続失敗・不正データ・検索候補・表示の上限超過を区別する。仕様と投入方法は[店舗データ](../development/sample-data.md)を参照する。

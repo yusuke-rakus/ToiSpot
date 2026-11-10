@@ -124,7 +124,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     children: ReactNode
     onClick?: (event: unknown) => void
     onDblclick?: (event: unknown) => void
-    onTilesLoaded: () => void
+    onTilesLoaded: (event: { map: typeof maps }) => void
     onIdle: () => void
     center: { lat: number; lng: number }
     zoom: number
@@ -161,7 +161,9 @@ vi.mock('@vis.gl/react-google-maps', () => ({
       >
         地図カメラを移動
       </button>
-      <button onClick={onTilesLoaded}>地図の描画を完了</button>
+      <button onClick={() => onTilesLoaded({ map: mapInstance.current })}>
+        地図の描画を完了
+      </button>
       <button onClick={onIdle}>地図を移動</button>
       {[12, 13].map((level) => (
         <button
@@ -233,7 +235,7 @@ function mapClickEvent(latLng: MapPoint) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mapInstance.current = maps
+  mapInstance.current = { ...maps }
   maps.getZoom.mockReset().mockReturnValue(14)
   localStorage.clear()
   writer.save.mockReset().mockResolvedValue('new-fixed')
@@ -456,6 +458,34 @@ describe('地図からの管理者ログイン', () => {
     fireEvent.click(center)
     expect(navigate).not.toHaveBeenCalled()
   })
+
+  it.each([true, false])(
+    'ログイン後、再表示する地図が描画済みなら完了通知を待たない（描画済み: %s）',
+    (reuseRenderedMap) => {
+      const { unmount } = render(<MapPage config={configWithAdminLogin} />)
+      fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+      fireEvent.doubleClick(
+        screen.getByRole('button', { name: '中心地点を選択' }),
+      )
+      expect(navigate).toHaveBeenCalledWith({ to: '/admin-login' })
+      unmount()
+
+      if (!reuseRenderedMap) mapInstance.current = { ...maps }
+      admin.status = 'admin'
+      render(<MapPage config={configWithAdminLogin} />)
+      expect(screen.getByRole('button', { name: 'ログアウト' })).toBeVisible()
+      const location = screen.getByRole('button', { name: '現在地に移動' })
+      if (reuseRenderedMap) {
+        expect(location).toBeEnabled()
+        expect(
+          screen.queryByText('地図を読み込んでいます'),
+        ).not.toBeInTheDocument()
+      } else {
+        expect(location).toBeDisabled()
+        expect(screen.getByText('地図を読み込んでいます')).toBeVisible()
+      }
+    },
+  )
 })
 
 describe('地図の設定と失敗時の表示', () => {
