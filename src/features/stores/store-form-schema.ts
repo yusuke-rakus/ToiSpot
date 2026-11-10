@@ -2,31 +2,14 @@ import { z } from 'zod'
 import { availabilitySchema, type Store, type StoreInput } from './store-schema'
 import type { ConveniencePlace } from '../places/nearby-places'
 
-// 選択したコンビニの種類は既存のchainNameフィールドに保存する。
-export const convenienceStoreTypes = [
-  'セブン-イレブン',
-  'ファミリーマート',
-  'ローソン',
-  'ミニストップ',
-  'デイリーヤマザキ',
-  'セイコーマート',
-  'ポプラ',
-  'その他',
-] as const
-const convenienceStoreTypeSchema = z.enum(convenienceStoreTypes, {
-  error: 'コンビニの種類を選択してください',
-})
+export const equipmentCountOptions = ['0', '1', '2', '3', '4', '5'] as const
+
 const equipment = z
   .string()
   .trim()
-  .transform((value) => (value === '' ? null : Number(value)))
-  .pipe(
-    z
-      .number({ error: '0以上の整数を入力してください' })
-      .int('整数を入力してください')
-      .nonnegative('0以上を入力してください')
-      .nullable(),
-  )
+  .transform((value) => value || '0')
+  .pipe(z.enum(equipmentCountOptions, { error: '0〜5から選択してください' }))
+  .transform(Number)
 
 const equipmentFormSchema = z.object({
   male: equipment,
@@ -38,9 +21,6 @@ const equipmentFormSchema = z.object({
 export const storeFormSchema = z
   .object({
     name: z.string().trim().min(1, '店名を入力してください'),
-    chainName: z
-      .union([z.literal(''), convenienceStoreTypeSchema])
-      .pipe(convenienceStoreTypeSchema),
     address: z.string().trim().min(1, '住所を入力してください'),
     availability: z
       .union([z.literal(''), availabilitySchema])
@@ -97,12 +77,9 @@ export function storeFormDefaults(
   store?: Store,
   place?: ConveniencePlace,
 ): StoreFormValues {
-  const count = (value: number | null | undefined) =>
-    value == null ? '' : String(value)
-  const storeType = convenienceStoreTypeSchema.safeParse(store?.chainName)
+  const count = (value: number | null | undefined) => String(value ?? 0)
   return {
     name: store?.name ?? place?.name ?? '',
-    chainName: store ? (storeType.success ? storeType.data : 'その他') : '',
     address: store?.address ?? place?.address ?? '',
     availability: store?.availability ?? '',
     male: count(store?.stalls.male),

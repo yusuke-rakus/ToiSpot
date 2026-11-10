@@ -32,7 +32,6 @@ export const googlePlaceIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,512}$/)
 const storeObjectSchema = z.object({
   googlePlaceId: googlePlaceIdSchema,
   name: z.string().trim().min(1),
-  chainName: z.string().trim().min(1),
   address: z.string().trim().min(1),
   location: z.object({
     lat: z.number().min(-90).max(90),
@@ -66,9 +65,18 @@ const equipmentError = {
   message: '利用不可の場合は設備数を記録できません',
   path: ['stalls'],
 }
-export const storeDocumentSchema = storeObjectSchema
-  .strict()
-  .refine(hasValidEquipment, equipmentError)
+export const storeDocumentSchema = z.preprocess(
+  (data) => {
+    // 旧店舗のチェーン名は読み取り時に破棄し、他の未知フィールドは引き続き拒否する。
+    if (data && typeof data === 'object' && Object.hasOwn(data, 'chainName')) {
+      const store: Record<string, unknown> = { ...data }
+      delete store.chainName
+      return store
+    }
+    return data
+  },
+  storeObjectSchema.strict().refine(hasValidEquipment, equipmentError),
+)
 export const storeInputSchema = storeObjectSchema
   .omit({
     geohash: true,

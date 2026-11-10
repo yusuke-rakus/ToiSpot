@@ -478,7 +478,7 @@ describe('管理者設定と書き込みRules', () => {
     const db = manager()
     const changes = [
       { name: ' \n\t' },
-      { chainName: '' },
+      { chainName: 'ローソン' },
       { address: '' },
       { location: { lat: 91, lng: 139 } },
       { location: { lat: 35, lng: '139' } },
@@ -746,6 +746,36 @@ describe('Place IDの紐付けとRules', () => {
     ).toBe(placeId)
     expect((await admin.collection('stores').get()).size).toBe(1)
   })
+  it.each(['変更なし', '備考を更新'])(
+    '旧チェーン名を読み取りでは無視し、店舗を保存したときに削除する（%s）',
+    async (edit) => {
+      const db = manager()
+      const target = { id: 'legacy-chain', googlePlaceId: placeId }
+      await saveStore(db, target, input())
+      const ref = admin.doc(`stores/${target.id}`)
+      const before = (await ref.get()).data()!
+      expect(before).not.toHaveProperty('chainName')
+      await ref.update({ chainName: '旧チェーン名' })
+
+      const original = (await readStores(client)).stores[0]
+      expect(original).toMatchObject(target)
+      expect(original).not.toHaveProperty('chainName')
+      expect((await readPlaceLinks(client, [placeId]))[placeId]).toEqual(
+        original,
+      )
+
+      const notes = edit === '変更なし' ? original.notes : 'トイレ情報を再確認'
+      await saveStore(db, { ...target, original }, { ...input(), notes })
+      const after = (await ref.get()).data()!
+      expect(after).not.toHaveProperty('chainName')
+      expect(after.createdAt).toEqual(before.createdAt)
+      expect(after.googlePlaceId).toBe(placeId)
+      expect(after.notes).toBe(notes)
+      expect((await admin.doc(`placeLinks/${placeId}`).get()).data()).toEqual({
+        storeId: target.id,
+      })
+    },
+  )
   it('Place IDなし・空の店舗は管理者でもSDKとRulesの両方で登録できない', async () => {
     const db = manager()
     const legacy: Partial<ReturnType<typeof newPayload>> = newPayload()

@@ -188,7 +188,7 @@ App HostingのCloud Build内で`pnpm build:production`がSecret Managerの参照
 
 第3〜6節の準備後に通常の手順でmainへ反映し、ActionsとApp HostingのRollouts画面で結果を確認する。本書の整備作業ではpush・クラウド変更・デプロイは実行していない。ローカル検証は[検証手順](../development/testing.md)を参照する。
 
-Firestore反映後にApp Hostingのビルドが失敗すると、Rulesだけが新しい状態で残る。両者の互換性を保つ。インデックスを追加した場合は構築完了も確認する。
+Firestore反映後にApp Hostingのビルドが失敗すると、Rulesだけが新しい状態で残る。両者の互換性を保つ。インデックスを追加した場合は構築完了も確認する。旧`chainName`を廃止するリリースでは、新しいRulesの適用から新しい画面への切り替えまで旧画面での店舗保存が拒否される。ロールアウト後は管理画面を再読み込みする。
 
 出典：[ロールアウトの管理](https://firebase.google.com/docs/app-hosting/rollouts)。
 

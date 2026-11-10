@@ -1,10 +1,5 @@
 import type { ReactNode } from 'react'
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  RefreshCw,
-  Store as StoreIcon,
-} from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -155,15 +150,17 @@ export function StorePanel({
                   >
                     <ItemContent>
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <ItemDescription className="text-[11px]">
-                          {store ? store.chainName : 'Google Maps の店舗情報'}
-                        </ItemDescription>
                         {store ? (
                           <AvailabilityBadge store={store} />
                         ) : (
-                          <Badge variant="secondary" className="text-[11px]">
-                            {registrationLabels[entry.registration]}
-                          </Badge>
+                          <>
+                            <ItemDescription className="text-[11px]">
+                              Google Maps の店舗情報
+                            </ItemDescription>
+                            <Badge variant="secondary" className="text-[11px]">
+                              {registrationLabels[entry.registration]}
+                            </Badge>
+                          </>
                         )}
                       </div>
                       <div className="flex items-start justify-between gap-3">
@@ -412,10 +409,6 @@ export function StoreDetails({ store }: { store: Store }) {
       : []
   return (
     <article className="map-panel-enter" aria-label="店舗の詳細">
-      <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <StoreIcon className="size-4" aria-hidden="true" />
-        {store.chainName}
-      </div>
       <h3 className="text-lg leading-7 font-semibold tracking-tight">
         {store.name}
       </h3>

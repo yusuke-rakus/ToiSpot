@@ -38,7 +38,7 @@ shadcn/uiとTailwind CSSはユーザー指定として確定。TanStackは適合
 
 フォームはshadcn/uiの公式例にもあるReact Hook Form＋Zodを採用する。TanStack Formも選択肢だが、Query・Routerの採用だけを理由にフォームまで統一せず、フォームライブラリは1つに絞る。
 
-Zodの入力検証はSecurity Rulesを置き換えない。FirestoreのTimestampなどSDK固有の値と画面用の値を変換する境界を設ける。空欄の設備数を数値へ変換した結果、意図せず0として保存しないようにする。項目の意味と必須条件は[データモデル](data-model.md)と[Q-04](../decisions/README.md)で確定する。
+Zodの入力検証はSecurity Rulesを置き換えない。FirestoreのTimestampなどSDK固有の値と画面用の値を変換する境界を設ける。貸出状況が利用可の場合、登録・編集フォームで設備数の空欄を0へ変換する。項目の意味と必須条件は[データモデル](data-model.md)と[Q-04](../decisions/README.md)で確定する。
 
 地図ラッパーはGoogleのReact向け教材でも使われている。地図コンポーネントを維持する構成を優先し、必要なら `reuseMaps` を検討するが、再利用機能だけで課金回避を保証しない。Map ID・色設定などの変更による再生成と、再利用機能の制約を実装時に確認する。
 

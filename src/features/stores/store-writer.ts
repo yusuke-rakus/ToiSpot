@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   runTransaction,
   serverTimestamp,
@@ -45,6 +46,8 @@ export async function saveStore(
   const ref = doc(db, 'stores', target.id)
   await runTransaction(db, async (transaction) => {
     const existing = await transaction.get(ref)
+    const removeLegacyChainName =
+      existing.exists() && Object.hasOwn(existing.data(), 'chainName')
     const linkRef = doc(db, 'placeLinks', placeId)
     const link = await transaction.get(linkRef)
     if (
@@ -60,33 +63,31 @@ export async function saveStore(
     if (!link.exists()) {
       transaction.set(linkRef, { storeId: target.id })
     }
+    if (
+      existing.exists() &&
+      existing.data().googlePlaceId === placeId &&
+      JSON.stringify(storeInputSchema.parse(existing.data())) ===
+        JSON.stringify(parsed)
+    ) {
+      if (removeLegacyChainName)
+        transaction.update(ref, {
+          chainName: deleteField(),
+          updatedAt: payload.updatedAt,
+        })
+      return
+    }
     if (!target.original) {
       // フォームで確保したIDを再利用。通信結果が不明だった後も別IDを作らない。
-      if (existing.exists()) {
-        const savedInput = storeInputSchema.parse(existing.data())
-        if (
-          JSON.stringify(savedInput) === JSON.stringify(parsed) &&
-          existing.data().googlePlaceId === placeId
-        )
-          return
+      if (existing.exists())
         throw new StoreConflictError(
           'この登録は既に保存されています。一覧を更新して内容を確認し、編集してください。',
         )
-      }
       transaction.set(ref, {
         ...payload,
         isSample: false,
         createdAt: serverTimestamp(),
       })
     } else {
-      if (
-        existing.exists() &&
-        target.googlePlaceId &&
-        existing.data().googlePlaceId === placeId &&
-        JSON.stringify(storeInputSchema.parse(existing.data())) ===
-          JSON.stringify(parsed)
-      )
-        return
       if (
         !existing.exists() ||
         storeDocumentSchema.parse(existing.data()).updatedAt !==
@@ -97,7 +98,12 @@ export async function saveStore(
         )
       }
       // 作成日時とサンプル識別は更新対象に含めない。
-      transaction.update(ref, payload)
+      transaction.update(
+        ref,
+        removeLegacyChainName
+          ? { ...payload, chainName: deleteField() }
+          : payload,
+      )
     }
   })
   return target.id

@@ -16,6 +16,7 @@ import {
   type MapPoint,
 } from './map-config'
 import { createTestStores } from '../../../tests/fixtures/stores'
+import { chooseSelectOption } from '../../../tests/select'
 import type { StoreListResult } from '../stores/store-schema'
 import type { ConveniencePlace } from '../places/nearby-places'
 import type { PlaceLinks } from '../places/place-links'
@@ -287,7 +288,7 @@ describe('管理者操作と地図画面の連携', () => {
   }
   const place: ConveniencePlace = {
     id: 'ChIJ_new',
-    name: '新規テスト店舗',
+    name: 'セブン-イレブン 新規テスト店舗',
     address: 'テスト住所',
     location: { lat: 35.68, lng: 139.76 },
     attributions: [],
@@ -327,11 +328,7 @@ describe('管理者操作と地図画面の連携', () => {
     expect(screen.queryByLabelText('緯度')).not.toBeInTheDocument()
     expect(screen.getByLabelText('店名')).toHaveValue(place.name)
     expect(screen.getByLabelText('住所')).toHaveValue(place.address)
-    await user.selectOptions(
-      screen.getByLabelText('コンビニの種類'),
-      'セブン-イレブン',
-    )
-    await user.selectOptions(screen.getByLabelText('貸出状況'), 'available')
+    await chooseSelectOption(user, '貸出状況', '利用可')
     await user.click(screen.getByRole('button', { name: '保存する' }))
     expect(
       await screen.findByRole('article', { name: '店舗の詳細' }),
@@ -347,17 +344,13 @@ describe('管理者操作と地図画面の連携', () => {
     ).toHaveAttribute('src', '/icons/map-pins/seven-eleven.svg')
     await user.click(screen.getByRole('button', { name: '店舗を編集' }))
     expect(screen.getByLabelText('店名')).toHaveValue(place.name)
-    expect(screen.getByLabelText('コンビニの種類')).toHaveValue(
-      'セブン-イレブン',
-    )
-    expect(screen.getByLabelText('貸出状況')).toHaveValue('available')
+    expect(screen.getByLabelText('貸出状況')).toHaveTextContent('利用可')
   })
   it('取得上限外でも保存成功と省略理由を伝える', async () => {
     writer.save.mockResolvedValue('new-fixed')
     storeQuery.data!.truncated = true
     const user = await openRegistration()
-    await user.selectOptions(screen.getByLabelText('コンビニの種類'), 'その他')
-    await user.selectOptions(screen.getByLabelText('貸出状況'), 'available')
+    await chooseSelectOption(user, '貸出状況', '利用可')
     await user.click(screen.getByRole('button', { name: '保存する' }))
     expect(
       await screen.findByText(
@@ -913,7 +906,7 @@ describe('Placesのピンと登録情報', () => {
     const store = {
       ...createTestStores('2026-11-03T00:00:00.000Z')[4].data,
       id: 'outside-limit',
-      chainName: 'Ｆａｍｉｌｙ Ｍａｒｔ',
+      name: 'Ｆａｍｉｌｙ Ｍａｒｔ 京橋南店',
       googlePlaceId: place.id,
       isSample: false,
     }
@@ -1007,8 +1000,7 @@ describe('Placesのピンと登録情報', () => {
       await user.clear(screen.getByLabelText(label))
       await user.type(screen.getByLabelText(label), value)
     }
-    await user.selectOptions(screen.getByLabelText('コンビニの種類'), 'その他')
-    await user.selectOptions(screen.getByLabelText('貸出状況'), 'available')
+    await chooseSelectOption(user, '貸出状況', '利用可')
     await user.click(screen.getByRole('button', { name: '保存する' }))
     expect(
       await screen.findByRole('article', { name: '店舗の詳細' }),

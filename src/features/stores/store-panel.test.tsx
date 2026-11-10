@@ -63,7 +63,6 @@ describe('トイレ情報の詳細', () => {
       />,
     )
     expect(screen.getByRole('heading', { name: store.name })).toBeVisible()
-    expect(screen.getByText(store.chainName)).toBeVisible()
     expect(screen.getByText(store.address)).toBeVisible()
     expect(screen.getByText('利用不可')).toBeVisible()
     expect(screen.queryByLabelText('トイレ設備')).not.toBeInTheDocument()
