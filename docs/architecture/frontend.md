@@ -29,7 +29,7 @@ QueryはFirebaseの代替ではなく、取得結果をReact画面で扱うた�
 
 状態の分担は、保存済み店舗データをQuery、URLに反映する検索条件をRouter、入力中の値をフォームライブラリ、一時的な開閉状態をReactのローカル状態とする。
 
-実装ではAuthの通知を`AdminProvider`で受け、タブ内セッションと非公開設定の権限照合を管理する。フォームはReact Hook Form＋Zod、保存はQuery mutation＋Firestore transactionを使用する。保存成功後は一覧を再取得し、地図を維持したまま選択を更新する。管理者用のメール設定をQueryの公開店舗キャッシュへ混ぜない。
+実装ではAuthの通知を`AdminProvider`で受け、ブラウザに保持したセッションと非公開設定の権限照合を管理する。フォームはReact Hook Form＋Zod、保存はQuery mutation＋Firestore transactionを使用する。保存成功後は一覧を再取得し、地図を維持したまま選択を更新する。管理者用のメール設定をQueryの公開店舗キャッシュへ混ぜない。
 
 出典：[TanStack Routerの検索パラメータ](https://tanstack.com/router/latest/docs/framework/react/guide/search-params)、[外部データキャッシュとの連携](https://tanstack.com/router/latest/docs/framework/react/guide/external-data-loading)。
 

@@ -31,7 +31,7 @@ vi.mock('firebase/firestore', () => ({
   getDocFromServer: (...args: unknown[]) => mocks.getDoc(...args),
 }))
 vi.mock('firebase/auth', () => ({
-  browserSessionPersistence: 'session',
+  browserLocalPersistence: 'local',
   setPersistence: (...args: unknown[]) => mocks.prepare(...args),
   onIdTokenChanged: (_auth: unknown, listener: typeof mocks.listener) => {
     mocks.listener = listener
@@ -104,12 +104,12 @@ it('許可UIDとpasswordプロバイダーを照合し、メール確認を要�
     checkAdminAccess(user(), mocks.db as never),
   ).rejects.toBeDefined()
 })
-it('タブ内セッションを準備し、対象外アカウントをサインアウトする', async () => {
+it('ブラウザに保持するセッションを準備し、対象外アカウントをサインアウトする', async () => {
   const changed = vi.fn<(state: AdminSession) => void>()
   const stop = observeAdminSession(changed)
   await waitFor(() => expect(mocks.listener).toBeDefined())
   await mocks.listener!(user('other-uid'))
-  expect(mocks.prepare).toHaveBeenCalledWith(mocks.auth, 'session')
+  expect(mocks.prepare).toHaveBeenCalledWith(mocks.auth, 'local')
   expect(mocks.signOut).toHaveBeenCalledOnce()
   expect(changed).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -198,6 +198,7 @@ it('セッション準備後、クラウドでも同じAuthでパスワード認
       }),
   )
   const pending = loginWithPassword('admin@example.test', 'test-password')
+  expect(mocks.prepare).toHaveBeenCalledWith(mocks.auth, 'local')
   expect(mocks.signIn).not.toHaveBeenCalled()
   resolve()
   await pending

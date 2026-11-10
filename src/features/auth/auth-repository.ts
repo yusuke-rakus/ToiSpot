@@ -1,5 +1,5 @@
 import {
-  browserSessionPersistence,
+  browserLocalPersistence,
   onIdTokenChanged,
   setPersistence,
   signInWithEmailAndPassword,
@@ -64,7 +64,7 @@ export function observeAdminSession(onChange: (state: AdminSession) => void) {
   const { auth, db } = services
   let preparation = preparations.get(auth)
   if (!preparation) {
-    preparation = setPersistence(auth, browserSessionPersistence)
+    preparation = setPersistence(auth, browserLocalPersistence)
     preparations.set(auth, preparation)
   }
   void preparation
@@ -132,7 +132,7 @@ export async function loginWithPassword(email: string, password: string) {
   const { auth } = getFirebaseServices()
   let preparation = preparations.get(auth)
   if (!preparation) {
-    preparation = setPersistence(auth, browserSessionPersistence)
+    preparation = setPersistence(auth, browserLocalPersistence)
     preparations.set(auth, preparation)
   }
   try {
