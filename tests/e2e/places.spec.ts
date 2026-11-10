@@ -4,8 +4,7 @@ import { createTestStores } from '../fixtures/stores'
 const store = {
   ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
   id: 'confirmed',
-  name: '確認済みコンビニ',
-  chainName: 'セブン-イレブン',
+  name: 'セブン-イレブン 確認済み店',
   address: '独自に確認した住所',
   location: { lat: 35.684, lng: 139.755 },
   isSample: false,
@@ -88,7 +87,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   const sheet = page.getByRole('dialog', { name: 'トイレ情報' })
   const list = page.getByRole('list', { name: '周辺店舗一覧' })
   const registeredPin = page.getByRole('button', {
-    name: '確認済みコンビニ・利用可',
+    name: `${store.name}・利用可`,
   })
   const pin = page.getByRole('button', {
     name: 'ローソン テスト店・データなし',
@@ -160,9 +159,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   ).toBe(1)
   if (mobile) {
     await registeredPin.click()
-    await expect(
-      sheet.getByRole('heading', { name: '確認済みコンビニ' }),
-    ).toBeVisible()
+    await expect(sheet.getByRole('heading', { name: store.name })).toBeVisible()
     await expect(pinImage).toHaveAttribute('data-selected', 'false')
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
@@ -192,7 +189,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   if (mobile) await registeredPin.click()
   else
     await page
-      .getByRole('button', { name: '確認済みコンビニの詳細を見る' })
+      .getByRole('button', { name: `${store.name}の詳細を見る` })
       .click()
   await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
   await expect(registeredImage).toHaveCSS(

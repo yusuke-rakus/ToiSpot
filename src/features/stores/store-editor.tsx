@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { X } from 'lucide-react'
@@ -24,7 +24,13 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
@@ -45,7 +51,7 @@ import {
 import {
   storeFormDefaults,
   storeFormSchema,
-  convenienceStoreTypes,
+  equipmentCountOptions,
   type StoreFormValues,
   type StoreFormData,
 } from './store-form-schema'
@@ -62,8 +68,7 @@ type Props = {
   onClose: () => void
   onSaved: (id: string) => Promise<void>
 }
-const selectClass =
-  'w-full [&_select]:h-10 [&_select]:text-base md:[&_select]:text-sm'
+type SelectFieldName = 'availability' | 'male' | 'female' | 'shared' | 'urinals'
 
 export function StoreEditor({ target, place, onClose, onSaved }: Props) {
   const admin = useAdmin()
@@ -86,9 +91,10 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
         }),
       ),
   })
+  const defaultValues = storeFormDefaults(target.original, place)
   const form = useForm<StoreFormValues, unknown, StoreFormData>({
     resolver: zodResolver(storeFormSchema),
-    defaultValues: storeFormDefaults(target.original, place),
+    defaultValues,
   })
   const {
     register,
@@ -141,11 +147,14 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
       </Field>
     )
   }
-  function attrs(name: keyof StoreFormValues) {
+  function attrs(name: keyof StoreFormValues, descriptionId?: string) {
     return {
       id: `store-${name}`,
       'aria-invalid': !!errors[name],
-      'aria-describedby': errors[name] ? `error-${name}` : undefined,
+      'aria-describedby':
+        [descriptionId, errors[name] && `error-${name}`]
+          .filter(Boolean)
+          .join(' ') || undefined,
     }
   }
   function text(name: 'name' | 'address', label: string) {
@@ -153,6 +162,45 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
       name,
       label,
       <Input className="h-10" {...attrs(name)} {...register(name)} />,
+    )
+  }
+  function select(
+    name: SelectFieldName,
+    label: string,
+    options: ReactNode,
+    descriptionId?: string,
+  ) {
+    return field(
+      name,
+      label,
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field: { ref, value, onChange, onBlur } }) => (
+          <Select
+            name={name}
+            value={value}
+            onValueChange={onChange}
+            disabled={saving || !allowed}
+          >
+            <SelectTrigger
+              className="w-full text-base data-[size=default]:h-10 md:text-sm"
+              {...attrs(name, descriptionId)}
+              ref={ref}
+              onBlur={onBlur}
+            >
+              <SelectValue placeholder="選択してください" />
+            </SelectTrigger>
+            <SelectContent
+              position="popper"
+              align="start"
+              className="z-[60] w-(--radix-select-trigger-width) min-w-0"
+            >
+              {options}
+            </SelectContent>
+          </Select>
+        )}
+      />,
     )
   }
   return (
@@ -210,47 +258,20 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
               className="min-w-0 space-y-6 px-5 py-5 sm:px-6"
             >
               {text('name', '店名')}
-              {field(
-                'chainName',
-                'コンビニの種類',
-                <NativeSelect
-                  className={selectClass}
-                  {...attrs('chainName')}
-                  {...register('chainName')}
-                >
-                  <NativeSelectOption value="" disabled>
-                    選択してください
-                  </NativeSelectOption>
-                  {convenienceStoreTypes.map((type) => (
-                    <NativeSelectOption key={type} value={type}>
-                      {type}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>,
-              )}
               {text('address', '住所')}
-              {field(
+              {select(
                 'availability',
                 '貸出状況',
-                <NativeSelect
-                  className={selectClass}
-                  {...attrs('availability')}
-                  {...register('availability')}
-                >
-                  <NativeSelectOption value="" disabled>
-                    選択してください
-                  </NativeSelectOption>
-                  {availabilitySchema.options.map((value) => (
-                    <NativeSelectOption key={value} value={value}>
-                      {availabilityLabels[value]}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>,
+                availabilitySchema.options.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {availabilityLabels[value]}
+                  </SelectItem>
+                )),
               )}
               {availability === 'available' && (
                 <div className="space-y-3">
                   <FieldDescription id="equipment-hint">
-                    設備数の空欄は不明、0は設備なしとして扱います。
+                    設備がない場合は0を選択してください。
                   </FieldDescription>
                   <div className="grid grid-cols-2 gap-4">
                     {(
@@ -262,24 +283,24 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
                       ] as const
                     ).map(([name, label]) => (
                       <div key={name}>
-                        {field(
+                        {select(
                           name,
                           label,
-                          <Input
-                            className="h-10"
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="不明"
-                            {...attrs(name)}
-                            aria-describedby={[
-                              'equipment-hint',
-                              errors[name] && `error-${name}`,
-                            ]
-                              .filter(Boolean)
-                              .join(' ')}
-                            {...register(name)}
-                          />,
+                          <>
+                            {!equipmentCountOptions.some(
+                              (count) => count === defaultValues[name],
+                            ) && (
+                              <SelectItem value={defaultValues[name]} disabled>
+                                登録済み（{defaultValues[name]}）
+                              </SelectItem>
+                            )}
+                            {equipmentCountOptions.map((count) => (
+                              <SelectItem key={count} value={count}>
+                                {count}
+                              </SelectItem>
+                            ))}
+                          </>,
+                          'equipment-hint',
                         )}
                       </div>
                     ))}

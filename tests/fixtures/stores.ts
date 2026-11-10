@@ -76,7 +76,6 @@ export function createTestStores(
       data: storeDocumentSchema.parse({
         googlePlaceId: `ChIJ_fixture_${index + 1}`,
         name: `サンプルコンビニ ${item.name}`,
-        chainName: 'サンプルコンビニ',
         address: `東京都${item.area}（架空の店舗）`,
         location,
         geohash: geohashForLocation([location.lat, location.lng]),

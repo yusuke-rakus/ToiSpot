@@ -77,6 +77,7 @@ import { PlaceMarkers } from '../places/place-markers'
 const configFromEnv = getMapConfig(import.meta.env)
 const libraries = ['marker']
 const adminLoginClickIntervalMs = 1000
+const renderedMaps = new WeakSet<google.maps.Map>()
 // Tailwind の lg と同じ境界で、デスクトップではポータルを開かない。
 const mobileQuery = '(width < 64rem)'
 
@@ -551,6 +552,8 @@ function MapCanvas({
     currentMap.current = map
   }, [map])
   const [tilesReady, setTilesReady] = useState(false)
+  // ログイン画面から戻ったとき、再利用した地図の描画完了通知は再発行されないことがある。
+  if (!tilesReady && map && renderedMaps.has(map)) setTilesReady(true)
   const [slowLoading, setSlowLoading] = useState(false)
   const [locating, setLocating] = useState(false)
   const [locationResolved, setLocationResolved] = useState(false)
@@ -734,7 +737,10 @@ function MapCanvas({
         streetViewControl={false}
         fullscreenControl={false}
         zoomControl={false}
-        onTilesLoaded={() => setTilesReady(true)}
+        onTilesLoaded={({ map }) => {
+          renderedMaps.add(map)
+          setTilesReady(true)
+        }}
         onIdle={() => {
           const center = map?.getCenter()
           if (center) setMapCenter(center.toJSON())

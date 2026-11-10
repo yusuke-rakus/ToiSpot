@@ -4,7 +4,6 @@
     "data": {
       "googlePlaceId": "ChIJ4znq7bvjGGARjRx1BmiVrlc",
       "name": "セブン-イレブン 日野石田２丁目店",
-      "chainName": "セブン-イレブン",
       "address": "〒191-0021 東京都日野市石田２丁目２−１７",
       "location": {
         "lat": 35.6694171,
@@ -29,7 +28,6 @@
     "data": {
       "googlePlaceId": "ChIJ67odA7zjGGARBz4f-V8P0kg",
       "name": "ローソン 日野石田一丁目店",
-      "chainName": "ローソン",
       "address": "〒191-0021 東京都日野市石田１丁目１８−９",
       "location": {
         "lat": 35.6707244,
@@ -54,7 +52,6 @@
     "data": {
       "googlePlaceId": "ChIJ7eIf5bTjGGARNOuHycbzz98",
       "name": "セブン-イレブン 日野万願寺６丁目店",
-      "chainName": "セブン-イレブン",
       "address": "〒191-0024 東京都日野市万願寺６丁目４２−７",
       "location": {
         "lat": 35.6670741,
@@ -79,7 +76,6 @@
     "data": {
       "googlePlaceId": "ChIJIYV19rbjGGARBHkS-S2HYY0",
       "name": "ファミリーマート 日野万願寺店",
-      "chainName": "ファミリーマート",
       "address": "〒191-0024 東京都日野市万願寺３丁目２５−１３",
       "location": {
         "lat": 35.672599999999996,
@@ -104,7 +100,6 @@
     "data": {
       "googlePlaceId": "ChIJc0OJc7jjGGAR8Tih7r8ZYu4",
       "name": "セブン-イレブン 日野万願寺２丁目店",
-      "chainName": "セブン-イレブン",
       "address": "〒191-0024 東京都日野市万願寺２丁目３３−１０",
       "location": {
         "lat": 35.673466,
@@ -129,7 +124,6 @@
     "data": {
       "googlePlaceId": "ChIJj7PPErbjGGARv64_dIX8yLc",
       "name": "セブン-イレブン 日野税務署前店",
-      "chainName": "セブン-イレブン",
       "address": "〒191-0024 東京都日野市万願寺４丁目２４−２",
       "location": {
         "lat": 35.6701917,
@@ -154,7 +148,6 @@
     "data": {
       "googlePlaceId": "ChIJq6oWDMjjGGARMLCfsS-npXo",
       "name": "ローソン・スリーエフ 日野下田店",
-      "chainName": "ローソン",
       "address": "〒191-0024 東京都日野市万願寺３丁目８−１２",
       "location": {
         "lat": 35.6739307,

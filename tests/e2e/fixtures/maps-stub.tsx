@@ -46,7 +46,7 @@ export function Map({
   onDragstart,
 }: {
   children: ReactNode
-  onTilesLoaded: () => void
+  onTilesLoaded: (event: { map: typeof map }) => void
   onIdle: () => void
   style: CSSProperties
   colorScheme: string
@@ -82,7 +82,7 @@ export function Map({
     }
   }, [onCameraChanged, onIdle])
   useEffect(() => {
-    onTilesLoaded()
+    onTilesLoaded({ map })
   }, [onTilesLoaded])
   return (
     <div

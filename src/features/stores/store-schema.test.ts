@@ -34,6 +34,15 @@ describe('店舗データの検証', () => {
     ).toBe(false)
   })
 
+  it('旧チェーン名がある店舗も読み込み、値を破棄する', () => {
+    const legacy = { ...data, chainName: '旧チェーン名' }
+    expect(storeDocumentSchema.parse(legacy)).toEqual(data)
+    expect(storeInputSchema.parse(legacy)).not.toHaveProperty('chainName')
+    expect(
+      storeDocumentSchema.safeParse({ ...legacy, extra: true }).success,
+    ).toBe(false)
+  })
+
   it('Timestampを正規化し、負数・小数・不正な日付を拒否する', () => {
     const normalized = storeDocumentSchema.parse({
       ...data,
