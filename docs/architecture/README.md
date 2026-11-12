@@ -58,7 +58,7 @@ Zodの入力検証はSecurity Rulesを置き換えない。FirestoreのTimestamp
 
 基本的なデータフローは「閲覧画面 → Query → データアクセス層 → Firestore → 地図と一覧」「管理画面 → フォーム検証 → Authenticationの認証状態 → Security Rulesで検証して保存 → Queryキャッシュ更新」とする。
 
-管理者用画面は別URLへ分けず、同じ`/`に管理者の登録・編集操作を追加する。管理者メールはNode.jsのシードだけで読み込み、非公開の`_settings/admin`へ保存してRulesから照合する。
+同じ`/`に店舗の登録・修正フォームを置き、管理者は直接保存、一般利用者は申請として送信する。管理者の承認画面は`/admin/store-requests`に置く。管理者の認証情報はNode.jsのシードだけで読み込み、非公開の`_settings/admin`に許可UIDを保存してRulesから照合する。
 
 ## 詳細設計
 

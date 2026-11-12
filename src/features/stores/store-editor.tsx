@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
@@ -61,17 +61,35 @@ import {
   type StoreWriteTarget,
 } from './store-writer'
 import type { ConveniencePlace } from '../places/nearby-places'
+import { submitStoreRequest } from '../store-requests/store-request-repository'
+import type { StoreRequestTarget } from '../store-requests/store-request-schema'
+import { storeRequestKeys } from '../store-requests/use-store-requests'
 
 type Props = {
   target: StoreWriteTarget
   place?: ConveniencePlace
+  mode?: 'direct' | 'request'
+  requestTarget?: StoreRequestTarget
   onClose: () => void
-  onSaved: (id: string) => Promise<void>
+  onSaved?: (id: string) => Promise<void>
+  onRequested?: () => Promise<void>
 }
 type SelectFieldName = 'availability' | 'male' | 'female' | 'shared' | 'urinals'
 
-export function StoreEditor({ target, place, onClose, onSaved }: Props) {
+export function StoreEditor({
+  target,
+  place,
+  mode = 'direct',
+  requestTarget,
+  onClose,
+  onSaved,
+  onRequested,
+}: Props) {
   const admin = useAdmin()
+  const queryClient = useQueryClient()
+  // 認証状態が変化しても、入力開始時の保存先を切り替えない。
+  const [operation] = useState(() => ({ mode, requestTarget }))
+  const requesting = operation.mode === 'request'
   const [returnFocus] = useState(() =>
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -82,14 +100,17 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
   const submitting = useRef(false)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const mutation = useMutation({
-    mutationFn: (input: StoreFormData) =>
-      saveConfiguredStore(
-        target,
-        storeInputSchema.parse({
-          ...input,
-          location: target.original?.location ?? place?.location,
-        }),
-      ),
+    mutationFn: (input: StoreFormData) => {
+      const parsed = storeInputSchema.parse({
+        ...input,
+        location: target.original?.location ?? place?.location,
+      })
+      if (requesting) {
+        if (!operation.requestTarget) throw new Error('申請先がありません。')
+        return submitStoreRequest(operation.requestTarget, parsed)
+      }
+      return saveConfiguredStore(target, parsed)
+    },
   })
   const defaultValues = storeFormDefaults(target.original, place)
   const form = useForm<StoreFormValues, unknown, StoreFormData>({
@@ -102,7 +123,11 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
   } = form
   const availability = useWatch({ control: form.control, name: 'availability' })
   const saving = isSubmitting || mutation.isPending
-  const allowed = admin.status === 'admin'
+  const allowed =
+    !admin.busy &&
+    (requesting
+      ? admin.status === 'signedOut' || admin.status === 'admin'
+      : admin.status === 'admin')
   function close() {
     if (submitting.current) return
     if (isDirty) setDiscard(true)
@@ -114,18 +139,31 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
     setMessage(null)
     try {
       await mutation.mutateAsync(input)
-      await onSaved(target.id)
+      if (requesting) {
+        void queryClient.invalidateQueries({ queryKey: storeRequestKeys.all })
+        await onRequested?.()
+      } else await onSaved?.(target.id)
     } catch (error) {
       setMessage(
         error instanceof StoreConflictError
           ? error.message
-          : errorCode(error) === 'permission-denied'
-            ? '保存する権限がありません。管理者設定とログイン状態を確認してください。'
-            : usesFirebaseEmulators
-              ? '保存できませんでした。入力内容は保持しています。Emulatorの接続を確認して再試行してください。'
-              : '保存できませんでした。入力内容は保持しています。通信状態を確認して再試行してください。',
+          : requesting
+            ? error instanceof Error &&
+              error.name === 'StoreRequestConflictError'
+              ? error.message
+              : errorCode(error) === 'permission-denied'
+                ? '申請できませんでした。店舗情報が更新・登録された可能性があります。入力内容は保持しています。最新の店舗情報を確認してください。'
+                : usesFirebaseEmulators
+                  ? '申請できませんでした。入力内容は保持しています。Emulatorの接続を確認して再試行してください。'
+                  : '申請できませんでした。入力内容は保持しています。通信状態を確認して再試行してください。'
+            : errorCode(error) === 'permission-denied'
+              ? '保存する権限がありません。管理者設定とログイン状態を確認してください。'
+              : usesFirebaseEmulators
+                ? '保存できませんでした。入力内容は保持しています。Emulatorの接続を確認して再試行してください。'
+                : '保存できませんでした。入力内容は保持しています。通信状態を確認して再試行してください。',
       )
-      if (errorCode(error) === 'permission-denied') admin.refreshAccess()
+      if (!requesting && errorCode(error) === 'permission-denied')
+        admin.refreshAccess()
     } finally {
       submitting.current = false
     }
@@ -228,10 +266,18 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
         <div className="flex shrink-0 items-start justify-between border-b px-5 py-4 sm:px-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">
-              {target.original ? '店舗を編集' : '店舗を登録'}
+              {requesting
+                ? target.original
+                  ? '修正を申請'
+                  : '登録を申請'
+                : target.original
+                  ? '店舗を編集'
+                  : '店舗を登録'}
             </DialogTitle>
             <DialogDescription className="mt-1 text-xs leading-5 text-muted-foreground">
-              店舗とトイレの貸出状況を登録します。
+              {requesting
+                ? '店舗とトイレの情報を申請します。管理者が承認した後に地図へ反映されます。'
+                : '店舗とトイレの貸出状況を登録します。'}
             </DialogDescription>
           </DialogHeader>
           <Button
@@ -322,7 +368,9 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
             {!allowed && (
               <Alert variant="destructive">
                 <AlertDescription>
-                  管理者権限が確認できないため保存できません。入力内容は保持しています。
+                  {requesting
+                    ? '認証状態を確認できないため申請できません。入力内容は保持しています。'
+                    : '管理者権限が確認できないため保存できません。入力内容は保持しています。'}
                 </AlertDescription>
               </Alert>
             )}
@@ -342,7 +390,13 @@ export function StoreEditor({ target, place, onClose, onSaved }: Props) {
               </Button>
               <Button type="submit" disabled={saving || !allowed}>
                 {saving && <Spinner aria-hidden="true" />}
-                {saving ? '保存中' : '保存する'}
+                {requesting
+                  ? saving
+                    ? '申請中'
+                    : '申請する'
+                  : saving
+                    ? '保存中'
+                    : '保存する'}
               </Button>
             </DialogFooter>
           </div>

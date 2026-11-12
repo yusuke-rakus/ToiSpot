@@ -14,22 +14,37 @@ service cloud.firestore {
     function count(value) {
       return value == null || (value is int && value >= 0 && value <= 9007199254740991);
     }
+    function validStoreValues(d) {
+      return d.name is string && d.name.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && d.address is string && d.address.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && d.location is map && d.location.keys().hasAll(['lat', 'lng']) && d.location.keys().hasOnly(['lat', 'lng'])
+        && d.location.lat is number && d.location.lat >= -90 && d.location.lat <= 90
+        && d.location.lng is number && d.location.lng >= -180 && d.location.lng <= 180
+        && d.availability in ['available', 'unavailable']
+        && d.stalls is map && d.stalls.keys().hasAll(['male', 'female', 'shared']) && d.stalls.keys().hasOnly(['male', 'female', 'shared'])
+        && count(d.stalls.male) && count(d.stalls.female) && count(d.stalls.shared) && count(d.urinals)
+        && (d.availability == 'available' || (d.stalls.male == null && d.stalls.female == null && d.stalls.shared == null && d.urinals == null))
+        && d.notes is string;
+    }
+    function canonicalRequestText(value) {
+      // StoreInputのJavaScript trimと同じ空白文字。RulesのtrimはNBSP等を保持する。
+      let whitespace = '[\\x{0009}-\\x{000d}\\x{0020}\\x{00a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]';
+      return value == value.replace('^' + whitespace + '+|' + whitespace + '+$', '');
+    }
+    function validStoreInput(d) {
+      return d is map
+        && d.keys().hasAll(['name', 'address', 'location', 'availability', 'stalls', 'urinals', 'notes'])
+        && d.keys().hasOnly(['name', 'address', 'location', 'availability', 'stalls', 'urinals', 'notes'])
+        && validStoreValues(d)
+        && canonicalRequestText(d.name) && canonicalRequestText(d.address);
+    }
     function validStore(d) {
       return d.keys().hasAll(['name', 'address', 'location', 'geohash', 'availability', 'stalls', 'urinals', 'notes', 'createdAt', 'updatedAt', 'googlePlaceId'])
         && d.keys().hasOnly(['name', 'address', 'location', 'geohash', 'availability', 'stalls', 'urinals', 'notes', 'createdAt', 'updatedAt', 'isSample', 'googlePlaceId'])
         && d.googlePlaceId is string && d.googlePlaceId.matches('[A-Za-z0-9_-]{1,512}')
         && d.get('isSample', false) == false
-        && d.name is string && d.name.matches('[\\s\\S]*[^\\s][\\s\\S]*')
-        && d.address is string && d.address.matches('[\\s\\S]*[^\\s][\\s\\S]*')
-        && d.location is map && d.location.keys().hasAll(['lat', 'lng']) && d.location.keys().hasOnly(['lat', 'lng'])
-        && d.location.lat is number && d.location.lat >= -90 && d.location.lat <= 90
-        && d.location.lng is number && d.location.lng >= -180 && d.location.lng <= 180
+        && validStoreValues(d)
         && d.geohash is string && d.geohash.matches('[0123456789bcdefghjkmnpqrstuvwxyz]{1,12}')
-        && d.availability in ['available', 'unavailable']
-        && d.stalls is map && d.stalls.keys().hasAll(['male', 'female', 'shared']) && d.stalls.keys().hasOnly(['male', 'female', 'shared'])
-        && count(d.stalls.male) && count(d.stalls.female) && count(d.stalls.shared) && count(d.urinals)
-        && (d.availability == 'available' || (d.stalls.male == null && d.stalls.female == null && d.stalls.shared == null && d.urinals == null))
-        && d.notes is string
         && d.createdAt is timestamp && d.updatedAt is timestamp && d.createdAt <= d.updatedAt
         && d.get('isSample', false) is bool;
     }
@@ -61,6 +76,58 @@ service cloud.firestore {
         && request.resource.data.storeId is string
         && request.resource.data.storeId.matches('[^/]+')
         && getAfter(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.googlePlaceId == placeId;
+    }
+    match /storeRequests/{requestId} {
+      function validRequest(d) {
+        return d.keys().hasAll(['kind', 'targetStoreId', 'googlePlaceId', 'input', 'baseUpdatedAt', 'status', 'createdAt', 'reviewedAt'])
+          && d.keys().hasOnly(['kind', 'targetStoreId', 'googlePlaceId', 'input', 'baseUpdatedAt', 'status', 'createdAt', 'reviewedAt'])
+          && d.kind in ['create', 'update']
+          && d.targetStoreId is string && d.targetStoreId.matches('[^/]+')
+          && d.googlePlaceId is string && d.googlePlaceId.matches('[A-Za-z0-9_-]{1,512}')
+          && validStoreInput(d.input)
+          && d.status in ['pending', 'approved', 'rejected']
+          && d.createdAt is timestamp
+          && (d.kind == 'create' ? d.baseUpdatedAt == null && d.targetStoreId == requestId : d.baseUpdatedAt is timestamp)
+          && (d.status == 'pending' ? d.reviewedAt == null : d.reviewedAt is timestamp && d.reviewedAt >= d.createdAt);
+      }
+      function targetUnchanged(d) {
+        let store = get(/databases/$(database)/documents/stores/$(d.targetStoreId)).data;
+        return store.googlePlaceId == d.googlePlaceId
+          && store.updatedAt == d.baseUpdatedAt
+          && store.location == d.input.location
+          && get(/databases/$(database)/documents/placeLinks/$(d.googlePlaceId)).data.storeId == d.targetStoreId;
+      }
+      function validTarget(d) {
+        return d.kind == 'create'
+          ? !exists(/databases/$(database)/documents/stores/$(d.targetStoreId))
+            && !exists(/databases/$(database)/documents/placeLinks/$(d.googlePlaceId))
+          : targetUnchanged(d);
+      }
+      function approvedStoreMatches(d) {
+        let store = getAfter(/databases/$(database)/documents/stores/$(d.targetStoreId)).data;
+        return validTarget(d)
+          && store.googlePlaceId == d.googlePlaceId
+          && store.name == d.input.name && store.address == d.input.address
+          && store.location == d.input.location
+          && store.availability == d.input.availability
+          && store.stalls == d.input.stalls && store.urinals == d.input.urinals
+          && store.notes == d.input.notes
+          && store.updatedAt == request.time
+          && (d.kind != 'create' || store.createdAt == request.time)
+          && getAfter(/databases/$(database)/documents/placeLinks/$(d.googlePlaceId)).data.storeId == d.targetStoreId;
+      }
+      allow read: if admin();
+      allow create: if validRequest(request.resource.data)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && validTarget(request.resource.data);
+      allow update: if admin() && validRequest(request.resource.data)
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt'])
+        && request.resource.data.reviewedAt == request.time
+        && (request.resource.data.status == 'rejected' || approvedStoreMatches(request.resource.data));
+      allow delete: if false;
     }
     match /{document=**} {
       allow read, write: if false;

@@ -31,7 +31,7 @@ import {
   EmptyContent,
 } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { AppHeader } from '@/components/app-header'
 import { useTheme } from '@/components/theme-provider'
 import { firebaseConnection, usesFirebaseEmulators } from '@/lib/firebase'
 import { useStores } from '@/features/stores/use-stores'
@@ -48,6 +48,11 @@ import {
   allocateStoreId,
   type StoreWriteTarget,
 } from '@/features/stores/store-writer'
+import {
+  allocateStoreRequestId,
+  readStoreForRequest,
+} from '@/features/store-requests/store-request-repository'
+import type { StoreRequestTarget } from '@/features/store-requests/store-request-schema'
 import {
   getMapConfig,
   DEFAULT_PLACES_CONFIG,
@@ -112,7 +117,11 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   const [editor, setEditor] = useState<{
     target: StoreWriteTarget
     place?: ConveniencePlace
+    mode: 'direct' | 'request'
+    requestTarget?: StoreRequestTarget
   } | null>(null)
+  const [preparingRequest, setPreparingRequest] = useState(false)
+  const requestPreparation = useRef<AbortController | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const sheetTrigger = useRef<HTMLElement | null>(null)
@@ -120,6 +129,10 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   const [selection, setSelection] = useState<
     { kind: 'store'; id: string } | { kind: 'place'; id: string } | null
   >(null)
+  useEffect(
+    () => () => requestPreparation.current?.abort(),
+    [admin.status, selection?.kind, selection?.id],
+  )
   useEffect(() => {
     if (panelRef.current) panelRef.current.scrollTop = 0
   }, [selection])
@@ -222,15 +235,31 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     return { result, linked }
   }
 
+  const canWrite =
+    storesQuery.enabled &&
+    !admin.busy &&
+    (admin.status === 'admin' || admin.status === 'signedOut')
   function createStore(place: ConveniencePlace) {
-    if (admin.status !== 'admin') return
+    if (!canWrite || requestPreparation.current) return
     try {
+      const direct = admin.status === 'admin'
+      const id = direct ? allocateStoreId() : allocateStoreRequestId()
       setEditor({
         target: {
-          id: allocateStoreId(),
+          id,
           googlePlaceId: place.id,
         },
         place,
+        mode: direct ? 'direct' : 'request',
+        requestTarget: direct
+          ? undefined
+          : {
+              requestId: id,
+              kind: 'create',
+              targetStoreId: id,
+              googlePlaceId: place.id,
+              baseUpdatedAt: null,
+            },
       })
     } catch {
       setSaveNotice(
@@ -239,6 +268,62 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
           : '登録の準備ができませんでした。通信状態を確認してください。',
       )
     }
+  }
+  async function editStore(store: Store) {
+    if (!canWrite || requestPreparation.current) return
+    if (admin.status === 'admin') {
+      setEditor({
+        mode: 'direct',
+        target: {
+          id: store.id,
+          googlePlaceId: store.googlePlaceId,
+          original: store,
+        },
+      })
+      return
+    }
+    const controller = new AbortController()
+    requestPreparation.current = controller
+    setPreparingRequest(true)
+    setSaveNotice(null)
+    try {
+      const { store: current, baseUpdatedAt } = await readStoreForRequest(
+        store.id,
+        controller.signal,
+      )
+      controller.signal.throwIfAborted()
+      setEditor({
+        mode: 'request',
+        target: {
+          id: current.id,
+          googlePlaceId: current.googlePlaceId,
+          original: current,
+        },
+        requestTarget: {
+          requestId: allocateStoreRequestId(),
+          kind: 'update',
+          targetStoreId: current.id,
+          googlePlaceId: current.googlePlaceId,
+          baseUpdatedAt,
+        },
+      })
+    } catch {
+      if (!controller.signal.aborted)
+        setSaveNotice(
+          '修正申請の準備ができませんでした。通信状態と最新の店舗情報を確認し、「修正を申請」からもう一度お試しください。',
+        )
+    } finally {
+      if (requestPreparation.current === controller) {
+        requestPreparation.current = null
+        setPreparingRequest(false)
+      }
+    }
+  }
+  async function requested() {
+    setEditor(null)
+    setSaveNotice(
+      '申請を送信しました。管理者が承認した後に店舗情報へ反映されます。',
+    )
   }
   async function saved(id: string) {
     const { result, linked } = await refreshRegistration()
@@ -263,22 +348,16 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   }
 
   const onEdit =
-    admin.status === 'admin' && selectedStore
-      ? () =>
-          setEditor({
-            target: {
-              id: selectedStore.id,
-              googlePlaceId: selectedStore.googlePlaceId,
-              original: selectedStore,
-            },
-          })
-      : undefined
+    canWrite && selectedStore ? () => void editStore(selectedStore) : undefined
+  const editLabel = admin.status === 'admin' ? '店舗を編集' : '修正を申請'
   const pointContent =
     selectedEntry?.place && !selectedEntry.store ? (
       <PlaceDetails
         key={selectedEntry.key}
         entry={selectedEntry}
         canManage={admin.status === 'admin'}
+        canRegister={canWrite}
+        registering={preparingRequest}
         onRegister={() => createStore(selectedEntry.place!)}
       />
     ) : null
@@ -315,35 +394,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
 
   return (
     <div className="flex h-svh min-h-[480px] flex-col bg-background text-foreground">
-      <header className="z-10 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b bg-background px-4 py-1.5 sm:min-h-16 sm:px-7 sm:py-2">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <MapPin className="size-5" aria-hidden="true" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold tracking-tight sm:text-base">
-              コンビニトイレマップ
-            </h1>
-          </div>
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-          <ThemeToggle />
-          {admin.status === 'admin' && (
-            <>
-              <span className="hidden text-xs text-primary sm:inline">
-                管理者
-              </span>
-              <Button
-                variant="outline"
-                disabled={admin.busy}
-                onClick={() => void admin.logout()}
-              >
-                ログアウト
-              </Button>
-            </>
-          )}
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {!isMobile && (
@@ -372,6 +423,8 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
                   onSelectStore={selectStore}
                   onBack={clearSelection}
                   onEdit={onEdit}
+                  editLabel={editLabel}
+                  editDisabled={preparingRequest}
                   pointContent={pointContent}
                 />
               </div>
@@ -486,7 +539,12 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
             >
               {pointContent ??
                 (selectedStore && (
-                  <SelectedStoreDetails store={selectedStore} onEdit={onEdit} />
+                  <SelectedStoreDetails
+                    store={selectedStore}
+                    onEdit={onEdit}
+                    editLabel={editLabel}
+                    editDisabled={preparingRequest}
+                  />
                 ))}
             </div>
           </SheetContent>
@@ -496,8 +554,11 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
         <StoreEditor
           target={editor.target}
           place={editor.place}
+          mode={editor.mode}
+          requestTarget={editor.requestTarget}
           onClose={() => setEditor(null)}
           onSaved={saved}
+          onRequested={requested}
         />
       )}
     </div>
