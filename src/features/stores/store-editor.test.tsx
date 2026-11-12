@@ -9,6 +9,7 @@ import { chooseSelectOption, openSelect } from '../../../tests/select'
 
 const mock = vi.hoisted(() => ({
   save: vi.fn(),
+  request: vi.fn(),
   status: 'admin',
   refreshAccess: vi.fn(),
 }))
@@ -19,25 +20,33 @@ vi.mock('./store-writer', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./store-writer')>()),
   saveConfiguredStore: (...args: unknown[]) => mock.save(...args),
 }))
+vi.mock('../store-requests/store-request-repository', () => ({
+  submitStoreRequest: (...args: unknown[]) => mock.request(...args),
+}))
 beforeEach(() => {
   vi.clearAllMocks()
   mock.status = 'admin'
   mock.save.mockResolvedValue('fixed-new-id')
+  mock.request.mockResolvedValue('request-fixed')
 })
-function setup(edit = false, existingValues?: Partial<Store>) {
+function setup(
+  edit = false,
+  existingValues?: Partial<Store>,
+  requesting = false,
+) {
   const onSaved = vi.fn().mockResolvedValue(undefined)
+  const onRequested = vi.fn().mockResolvedValue(undefined)
   const onClose = vi.fn()
   const original = {
     ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
     id: 'sample-tokyo-01',
     ...existingValues,
   }
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { mutations: { retry: false } } })
-      }
-    >
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  })
+  const show = () => (
+    <QueryClientProvider client={client}>
       <StoreEditor
         target={
           edit
@@ -55,13 +64,129 @@ function setup(edit = false, existingValues?: Partial<Store>) {
           location: { lat: 35.68, lng: 139.76 },
           attributions: [],
         }}
+        mode={requesting ? 'request' : 'direct'}
+        requestTarget={
+          requesting
+            ? {
+                requestId: 'request-fixed',
+                targetStoreId: edit ? original.id : 'request-fixed',
+                kind: edit ? 'update' : 'create',
+                googlePlaceId: edit ? original.googlePlaceId : 'ChIJ_new',
+                baseUpdatedAt: null,
+              }
+            : undefined
+        }
         onSaved={onSaved}
+        onRequested={onRequested}
         onClose={onClose}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
-  return { user: userEvent.setup(), onSaved, onClose }
+  const view = render(show())
+  return {
+    user: userEvent.setup(),
+    onSaved,
+    onRequested,
+    onClose,
+    rerender: () => view.rerender(show()),
+  }
 }
+
+it('未ログインでも新規登録を申請し、店舗へ直接保存しない', async () => {
+  mock.status = 'signedOut'
+  const { user, onSaved, onRequested } = setup(false, undefined, true)
+  expect(screen.getByRole('dialog', { name: '登録を申請' })).toBeVisible()
+  expect(screen.getByText(/管理者が承認した後に地図へ反映/)).toBeVisible()
+  await chooseSelectOption(user, '貸出状況', '利用不可')
+  await user.click(screen.getByRole('button', { name: '申請する' }))
+  await waitFor(() => expect(onRequested).toHaveBeenCalledOnce())
+  expect(mock.request).toHaveBeenCalledWith(
+    {
+      requestId: 'request-fixed',
+      targetStoreId: 'request-fixed',
+      kind: 'create',
+      googlePlaceId: 'ChIJ_new',
+      baseUpdatedAt: null,
+    },
+    expect.objectContaining({
+      name: '新しい店舗',
+      location: { lat: 35.68, lng: 139.76 },
+      availability: 'unavailable',
+    }),
+  )
+  expect(mock.save).not.toHaveBeenCalled()
+  expect(onSaved).not.toHaveBeenCalled()
+})
+
+it('既存店舗の修正を申請し、失敗時も入力と申請先を維持する', async () => {
+  mock.status = 'signedOut'
+  mock.request
+    .mockRejectedValueOnce({ code: 'permission-denied' })
+    .mockResolvedValueOnce('request-fixed')
+  const { user, onRequested } = setup(true, undefined, true)
+  await user.clear(screen.getByLabelText('店名'))
+  await user.type(screen.getByLabelText('店名'), '修正を提案した店名')
+  await user.click(screen.getByRole('button', { name: '申請する' }))
+  expect(
+    await screen.findByText(/店舗情報が更新・登録された可能性/),
+  ).toBeVisible()
+  expect(screen.getByLabelText('店名')).toHaveValue('修正を提案した店名')
+  expect(mock.refreshAccess).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: '申請する' }))
+  await waitFor(() => expect(onRequested).toHaveBeenCalledOnce())
+  expect(mock.request).toHaveBeenCalledTimes(2)
+  expect(mock.request.mock.calls[0][0]).toEqual(mock.request.mock.calls[1][0])
+  expect(mock.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      kind: 'update',
+      targetStoreId: 'sample-tokyo-01',
+    }),
+    expect.objectContaining({
+      name: '修正を提案した店名',
+      location: { lat: 35.6818, lng: 139.764 },
+    }),
+  )
+  expect(mock.save).not.toHaveBeenCalled()
+})
+
+it.each(['loading', 'error'])(
+  '認証状態が%sの場合は申請を送信できない',
+  async (status) => {
+    mock.status = status
+    const { user } = setup(true, undefined, true)
+    expect(screen.getByRole('button', { name: '申請する' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '申請する' }))
+    expect(mock.request).not.toHaveBeenCalled()
+  },
+)
+
+it('直接保存フォーム中にログアウトしても申請へ切り替えない', async () => {
+  const { user, rerender } = setup(true)
+  await user.type(screen.getByLabelText('店名'), '編集中')
+  mock.status = 'signedOut'
+  rerender()
+  expect(screen.getByRole('button', { name: '保存する' })).toBeDisabled()
+  expect(
+    screen.queryByRole('button', { name: '申請する' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByLabelText('店名')).toHaveValue(
+    'サンプルコンビニ 丸の内中央店編集中',
+  )
+  await user.click(screen.getByRole('button', { name: '保存する' }))
+  expect(mock.request).not.toHaveBeenCalled()
+  expect(mock.save).not.toHaveBeenCalled()
+})
+
+it('申請フォーム中に管理者になっても直接保存へ切り替えない', async () => {
+  mock.status = 'signedOut'
+  const { user, rerender, onRequested } = setup(true, undefined, true)
+  mock.status = 'admin'
+  rerender()
+  await user.click(screen.getByRole('button', { name: '申請する' }))
+  await waitFor(() => expect(onRequested).toHaveBeenCalledOnce())
+  expect(mock.request).toHaveBeenCalledOnce()
+  expect(mock.save).not.toHaveBeenCalled()
+})
 
 it('Placesの店舗から新規登録し、選んだ設備数と初期値の0を同じIDで送信する', async () => {
   const { user, onSaved } = setup()

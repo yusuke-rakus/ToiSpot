@@ -7,7 +7,7 @@
 ## 権限とデータ
 
 - 未ログイン利用者が公開情報を閲覧できる。
-- 未ログイン利用者と管理者以外の認証ユーザーは、直接SDKを操作しても登録・更新・削除できない。
+- 未ログイン利用者と管理者以外の認証ユーザーは、直接SDKを操作しても公開店舗の登録・更新・削除はできない。新規登録・修正申請の作成は許可し、申請の閲覧・改変・審査は拒否する。
 - 管理者が保存した内容が再取得後も一致する。
 - 不正な設備数・座標・区分、許可しないフィールドをDB側でも拒否する。
 - 不明と0を区別でき、男女別・共用・混在・一部未確認のケースを誤表示しない。
@@ -159,3 +159,11 @@ Node.js 24.22.2・pnpm 12.16.1で `pnpm install --frozen-lockfile`、`pnpm check
 - 文書リンク・見出し階層・要件ID、型検査、Lint、Prettier、ビルドが成功。既存の約1.32MBのJSチャンクに対するサイズ警告は残る。
 - この環境のRules検証は`XDG_CONFIG_HOME=/tmp/toilet-map-firebase-config FIREBASE_CLI_DISABLE_UPDATE_CHECK=true pnpm test:rules:docker`で実行した。CLIの設定保存先を書き込み可能な一時領域へ分けた。E2Eは`PLAYWRIGHT_BROWSERS_PATH=/tmp/toilet-map-playwright pnpm test:e2e`を使用し、macOSのChromium起動制限を外して実行した。
 - 本番のEmail/Password有効化、ユーザー登録、許可UID設定、新規登録禁止、公開ドメインでのログイン・復旧は[公開後のチェックリスト](../operations/deployment.md#8-公開後の確認)で別途確認する。クラウド設定・デプロイ・commit・pushは実施していない。
+
+## 登録・修正申請の検証（2026-11-11）
+
+- `pnpm check`成功。単体・画面テスト184件で、申請と直接保存の切り替え、入力保持・二重操作防止、申請中一覧・差分・承認確認、競合時の承認停止、非公開キャッシュの破棄、更新失敗時の一覧保持、承認後の地図再取得を確認した。型検査・Lint・文書検査・ビルドも成功した。
+- `XDG_CONFIG_HOME=/tmp/toilet-map-firebase-config FIREBASE_CLI_DISABLE_UPDATE_CHECK=true pnpm test:rules:docker`で41件成功。匿名の新規・修正申請、申請内容の非公開、本文改変・状態だけの承認の拒否、店舗・紐付け・申請状態の原子性、同時承認・古い申請との競合、Timestampの精度と店名・住所のUnicode空白の整合性を確認した。テスト対象は専用の`demo-toilet-map-tests`のみとした。
+- `PLAYWRIGHT_BROWSERS_PATH=/tmp/toilet-map-playwright pnpm test:e2e`で21件成功、PC専用パネルの既存テストをスマホで1件スキップした。新規・修正申請から管理者ベル、承認・却下、承認後の公開表示、ログアウト後の専用画面へのアクセス制限までPC・スマホで検証した。Maps・認証・Firestoreの境界を置き換え、外部通信がないことを確認した。
+- `output/playwright/requests-{chromium,mobile}-{light,dark}.png`で申請内容・修正差分・ヘッダーの件数表示を確認した。Prettierと差分の空白検査も成功した。ビルドの大きなJSチャンクに関する既存警告は残る。
+- 本番への適用には追加したRulesと複合インデックスを含む既存のデプロイ工程が必要。クラウド設定変更・デプロイ・commit・pushは行っていない。

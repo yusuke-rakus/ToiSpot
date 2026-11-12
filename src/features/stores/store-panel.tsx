@@ -30,6 +30,8 @@ type Props = {
   onSelectStore: (id: string) => void
   onBack: () => void
   onEdit?: () => void
+  editLabel?: string
+  editDisabled?: boolean
   entries: MapEntry[]
   placesStatus: PlacesSearchState['status']
   onSelectPlace: (id: string) => void
@@ -52,6 +54,8 @@ export function StorePanel({
   onSelectStore,
   onBack,
   onEdit,
+  editLabel,
+  editDisabled,
   entries,
   placesStatus,
   onSelectPlace,
@@ -126,7 +130,12 @@ export function StorePanel({
       ) : selectedStore ? (
         <>
           <BackButton onClick={onBack} />
-          <SelectedStoreDetails store={selectedStore} onEdit={onEdit} />
+          <SelectedStoreDetails
+            store={selectedStore}
+            onEdit={onEdit}
+            editLabel={editLabel}
+            editDisabled={editDisabled}
+          />
         </>
       ) : entries.length > 0 ? (
         <ul
@@ -329,15 +338,24 @@ export function StorePanelFeedback({
 export function SelectedStoreDetails({
   store,
   onEdit,
+  editLabel = '店舗を編集',
+  editDisabled = false,
 }: {
   store: Store
   onEdit?: () => void
+  editLabel?: string
+  editDisabled?: boolean
 }) {
   return (
     <>
       {onEdit && (
-        <Button variant="outline" className="mb-5 w-full" onClick={onEdit}>
-          店舗を編集
+        <Button
+          variant="outline"
+          className="mb-5 w-full"
+          onClick={onEdit}
+          disabled={editDisabled}
+        >
+          {editLabel}
         </Button>
       )}
       <StoreDetails store={store} />

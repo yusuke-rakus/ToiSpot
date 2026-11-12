@@ -4,10 +4,14 @@ import { registrationLabels, type MapEntry } from './map-entries'
 export function PlaceDetails({
   entry,
   canManage,
+  canRegister = canManage,
+  registering = false,
   onRegister,
 }: {
   entry: MapEntry
   canManage: boolean
+  canRegister?: boolean
+  registering?: boolean
   onRegister: () => void
 }) {
   const place = entry.place!
@@ -39,10 +43,14 @@ export function PlaceDetails({
       <p role="status" className="mt-6 text-sm font-medium">
         トイレ情報：{registrationLabels[entry.registration]}
       </p>
-      {canManage && entry.registration === 'missing' && (
+      {canRegister && entry.registration === 'missing' && (
         <div className="mt-5 space-y-3">
-          <Button className="w-full" onClick={onRegister}>
-            トイレ情報を登録
+          <Button
+            className="w-full"
+            onClick={onRegister}
+            disabled={registering}
+          >
+            {canManage ? 'トイレ情報を登録' : '登録を申請'}
           </Button>
         </div>
       )}

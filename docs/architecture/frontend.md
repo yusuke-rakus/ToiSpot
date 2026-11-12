@@ -20,7 +20,7 @@ QueryはFirebaseの代替ではなく、取得結果をReact画面で扱うた�
 
 ## TanStack Routerの担当と状態の分担
 
-- 現在は公開地図と管理者操作を同じ`/`に置き、ログイン状態で登録編集の操作を追加する。将来の画面分割やURL検索条件はRouterで扱う。
+- 公開地図と登録・修正フォームは`/`に置き、管理者は直接保存、管理者以外は申請として送信する。管理者専用の申請一覧は`/admin/store-requests`に置く。
 - 地図中心・検索範囲・絞り込み条件など、URLに持たせる項目はQ-06で決める。URL入力値を検証し、不正な座標や区分をそのままDB検索へ渡さない。
 - Routerのloaderからデータが必要な場合も、Queryのキャッシュを利用する。同じFirestoreデータをRouterとQueryで独立に取得・管理しない。
 - 初期版はデータ取得を伴うリンクの自動プリロードを無効にし、閲覧前のFirestore読み取りを避ける。
@@ -30,6 +30,10 @@ QueryはFirebaseの代替ではなく、取得結果をReact画面で扱うた�
 状態の分担は、保存済み店舗データをQuery、URLに反映する検索条件をRouter、入力中の値をフォームライブラリ、一時的な開閉状態をReactのローカル状態とする。
 
 実装ではAuthの通知を`AdminProvider`で受け、ブラウザに保持したセッションと非公開設定の権限照合を管理する。フォームはReact Hook Form＋Zod、保存はQuery mutation＋Firestore transactionを使用する。保存成功後は一覧を再取得し、地図を維持したまま選択を更新する。管理者用のメール設定をQueryの公開店舗キャッシュへ混ぜない。
+
+申請フォームの直接保存・申請モードは開始時に固定し、認証状態の変化で自動変更しない。修正申請は開始時に最新店舗と精度を保持した更新日時を取得する。申請成功では公開店舗を変更せず、承認待ちと案内する。
+
+共通ヘッダーのベルは管理者だけに表示する。申請一覧・件数は専用Queryで管理し、画面表示・手動更新・承認却下後に取得する。リアルタイム購読や定期取得は行わない。管理者状態を離れたら取得をキャンセルして専用キャッシュを破棄し、遅延応答も反映しない。承認後は公開店舗とPlace紐付けのキャッシュも無効化する。
 
 出典：[TanStack Routerの検索パラメータ](https://tanstack.com/router/latest/docs/framework/react/guide/search-params)、[外部データキャッシュとの連携](https://tanstack.com/router/latest/docs/framework/react/guide/external-data-loading)。
 

@@ -67,6 +67,14 @@ import {
   signOut,
 } from 'firebase/auth'
 import { checkAdminAccess } from '../../src/features/auth/auth-repository'
+import {
+  approveStoreRequestInDb,
+  readPendingStoreRequestCount,
+  readPendingStoreRequests,
+  readStoreForRequestFromDb,
+  rejectStoreRequestInDb,
+  submitStoreRequestToDb,
+} from '../../src/features/store-requests/store-request-repository'
 
 // clearFirestoreはこの専用IDのみ。開発用demo-toilet-mapのデータに触れない。
 const projectId = 'demo-toilet-map-tests'
@@ -853,5 +861,343 @@ describe('Place IDの紐付けとRules', () => {
     await expect(readPlaceLinks(client, [placeId])).rejects.toThrow(
       'Inconsistent',
     )
+  })
+})
+
+describe('一般利用者の登録・編集申請と管理者の承認', () => {
+  beforeEach(async () => {
+    await seedAdminSettings(admin, 'manager-uid')
+  })
+  const input = () =>
+    storeInputSchema.parse(createTestStores('2026-11-03T00:00:00.000Z')[0].data)
+  const target = (requestId: string, googlePlaceId = `ChIJ_${requestId}`) => ({
+    requestId,
+    kind: 'create' as const,
+    targetStoreId: requestId,
+    googlePlaceId,
+    baseUpdatedAt: null,
+  })
+  const payload = (requestId: string) => {
+    return {
+      kind: 'create',
+      targetStoreId: requestId,
+      googlePlaceId: `ChIJ_${requestId}`,
+      baseUpdatedAt: null,
+      input: input(),
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      reviewedAt: null,
+    }
+  }
+
+  it('未ログインは申請だけ作成でき、申請一覧と件数は管理者だけが取得できる', async () => {
+    await submitStoreRequestToDb(client, target('anonymous'), input())
+    expect((await admin.doc('stores/anonymous').get()).exists).toBe(false)
+    expect((await admin.doc('placeLinks/ChIJ_anonymous').get()).exists).toBe(
+      false,
+    )
+    for (const db of [client, manager('other-uid')]) {
+      await assertFails(getDoc(doc(db, 'storeRequests/anonymous')))
+      await assertFails(getDocs(collection(db, 'storeRequests')))
+      await assertFails(readPendingStoreRequestCount(db))
+      await assertFails(
+        updateDoc(doc(db, 'storeRequests/anonymous'), {
+          status: 'approved',
+          reviewedAt: serverTimestamp(),
+        }),
+      )
+    }
+    const db = manager()
+    expect(await readPendingStoreRequestCount(db)).toBe(1)
+    expect((await readPendingStoreRequests(db)).requests[0]).toMatchObject({
+      id: 'anonymous',
+      status: 'pending',
+      input: input(),
+    })
+    await approveStoreRequestInDb(db, 'anonymous')
+    expect(await readPendingStoreRequestCount(db)).toBe(0)
+    expect((await admin.doc('stores/anonymous').get()).data()).toMatchObject(
+      input(),
+    )
+    expect((await admin.doc('placeLinks/ChIJ_anonymous').get()).data()).toEqual(
+      {
+        storeId: 'anonymous',
+      },
+    )
+    expect(
+      (await admin.doc('storeRequests/anonymous').get()).data(),
+    ).toMatchObject({
+      status: 'approved',
+      reviewedAt: expect.any(AdminTimestamp),
+    })
+    const before = (await admin.doc('stores/anonymous').get()).data()
+    await approveStoreRequestInDb(db, 'anonymous')
+    expect((await admin.doc('stores/anonymous').get()).data()).toEqual(before)
+    await expect(
+      rejectStoreRequestInDb(db, 'anonymous'),
+    ).rejects.toBeInstanceOf(StoreConflictError)
+  })
+
+  it('不正な申請・入力・日時・最初からの承認状態をRulesで拒否する', async () => {
+    const original = payload('invalid-request')
+    const changes = [
+      { kind: 'invalid' },
+      { targetStoreId: 'other' },
+      { googlePlaceId: '' },
+      { baseUpdatedAt: Timestamp.now() },
+      { status: 'approved', reviewedAt: serverTimestamp() },
+      { reviewedAt: serverTimestamp() },
+      { createdAt: Timestamp.fromMillis(0) },
+      { extra: true },
+      { input: { ...input(), isSample: false } },
+      { input: { ...input(), name: ' \n\t' } },
+      { input: { ...input(), location: { lat: 91, lng: 0 } } },
+      { input: { ...input(), availability: 'unavailable' } },
+      { input: { ...input(), urinals: -1 } },
+    ]
+    for (const change of changes)
+      await assertFails(
+        setDoc(doc(client, 'storeRequests/invalid-request'), {
+          ...original,
+          ...change,
+        }),
+      )
+    expect((await admin.collection('storeRequests').get()).empty).toBe(true)
+  })
+
+  it('申請の店名・住所の前後空白を拒否し、読取正規化で承認内容が変わることを防ぐ', async () => {
+    const original = payload('noncanonical')
+    for (const whitespace of [
+      ' ',
+      '\t',
+      '\n',
+      '\u00a0',
+      '\u3000',
+      '\ufeff',
+      '\u2007',
+      '\u2028',
+    ]) {
+      for (const field of ['name', 'address'] as const) {
+        await assertFails(
+          setDoc(doc(client, 'storeRequests/noncanonical'), {
+            ...original,
+            input: {
+              ...input(),
+              [field]: `${whitespace}${input()[field]}${whitespace}`,
+            },
+          }),
+        )
+      }
+    }
+    const canonicalInput = {
+      ...input(),
+      name: 'ローソン A店',
+      address: '東京都 日野市',
+    }
+    await assertSucceeds(
+      setDoc(doc(client, 'storeRequests/noncanonical'), {
+        ...original,
+        input: canonicalInput,
+      }),
+    )
+    await approveStoreRequestInDb(manager(), 'noncanonical')
+    expect((await admin.doc('stores/noncanonical').get()).data()).toMatchObject(
+      canonicalInput,
+    )
+  })
+
+  it('申請内容の変更・店舗を伴わない承認・削除を管理者でも拒否し、却下は公開情報を作らない', async () => {
+    await submitStoreRequestToDb(client, target('reject'), input())
+    const db = manager()
+    const ref = doc(db, 'storeRequests/reject')
+    await assertFails(updateDoc(ref, { input: { ...input(), notes: '改変' } }))
+    await assertFails(
+      updateDoc(ref, {
+        status: 'approved',
+        reviewedAt: serverTimestamp(),
+      }),
+    )
+    await assertFails(deleteDoc(ref))
+    await rejectStoreRequestInDb(db, 'reject')
+    await rejectStoreRequestInDb(db, 'reject')
+    expect((await admin.doc('storeRequests/reject').get()).data()?.status).toBe(
+      'rejected',
+    )
+    expect((await admin.collection('stores').get()).empty).toBe(true)
+    expect((await admin.collection('placeLinks').get()).empty).toBe(true)
+    await expect(approveStoreRequestInDb(db, 'reject')).rejects.toBeInstanceOf(
+      StoreConflictError,
+    )
+    await assertFails(updateDoc(ref, { status: 'pending', reviewedAt: null }))
+  })
+
+  it('編集元のTimestampをナノ秒まで保ち、正しい基準日時の編集申請だけ反映する', async () => {
+    const db = manager()
+    await saveStore(
+      db,
+      { id: 'precise', googlePlaceId: 'ChIJ_precise' },
+      input(),
+    )
+    const precise = new AdminTimestamp(1_800_000_000, 123_456_789)
+    await admin.doc('stores/precise').update({ updatedAt: precise })
+    const before = (await admin.doc('stores/precise').get()).data()!
+    const original = await readStoreForRequestFromDb(client, 'precise')
+    expect(original.baseUpdatedAt.nanoseconds).toBe(123_456_000)
+    const editTarget = {
+      ...target('edit-precise', 'ChIJ_precise'),
+      kind: 'update' as const,
+      targetStoreId: 'precise',
+      baseUpdatedAt: original.baseUpdatedAt,
+    }
+    const proposed = { ...input(), notes: '利用者が確認した新しい情報' }
+    await expect(
+      submitStoreRequestToDb(
+        client,
+        {
+          ...editTarget,
+          baseUpdatedAt: Timestamp.fromDate(new Date(original.store.updatedAt)),
+        },
+        proposed,
+      ),
+    ).rejects.toBeInstanceOf(StoreConflictError)
+    await submitStoreRequestToDb(client, editTarget, proposed)
+    expect((await admin.doc('stores/precise').get()).data()).toEqual(before)
+    await approveStoreRequestInDb(db, 'edit-precise')
+    const after = (await admin.doc('stores/precise').get()).data()!
+    expect(after.notes).toBe(proposed.notes)
+    expect(after.createdAt).toEqual(before.createdAt)
+    expect(after.googlePlaceId).toBe(before.googlePlaceId)
+    expect(after.location).toEqual(before.location)
+    expect((await admin.collection('stores').get()).size).toBe(1)
+  })
+
+  it('編集申請からの座標変更・別Place ID・存在しない対象・古い基準日時をRulesでも拒否する', async () => {
+    await saveStore(
+      manager(),
+      { id: 'edit-target', googlePlaceId: 'ChIJ_edit_target' },
+      input(),
+    )
+    const original = await readStoreForRequestFromDb(client, 'edit-target')
+    const edit = {
+      ...payload('invalid-edit'),
+      kind: 'update',
+      targetStoreId: 'edit-target',
+      googlePlaceId: 'ChIJ_edit_target',
+      baseUpdatedAt: original.baseUpdatedAt,
+    }
+    for (const change of [
+      { targetStoreId: 'missing' },
+      { googlePlaceId: 'ChIJ_wrong' },
+      { baseUpdatedAt: Timestamp.fromMillis(0) },
+      { baseUpdatedAt: null },
+      { input: { ...input(), location: { lat: 0, lng: 0 } } },
+    ])
+      await assertFails(
+        setDoc(doc(client, 'storeRequests/invalid-edit'), {
+          ...edit,
+          ...change,
+        }),
+      )
+    await assertSucceeds(setDoc(doc(client, 'storeRequests/valid-edit'), edit))
+  })
+
+  it('申請後に更新された店舗を上書きせず、申請中のまま却下できる', async () => {
+    const db = manager()
+    await saveStore(db, { id: 'stale', googlePlaceId: 'ChIJ_stale' }, input())
+    const original = await readStoreForRequestFromDb(client, 'stale')
+    await submitStoreRequestToDb(
+      client,
+      {
+        ...target('stale-request', 'ChIJ_stale'),
+        kind: 'update',
+        targetStoreId: 'stale',
+        baseUpdatedAt: original.baseUpdatedAt,
+      },
+      { ...input(), notes: '古い情報を元にした申請' },
+    )
+    await saveStore(
+      db,
+      { id: 'stale', googlePlaceId: 'ChIJ_stale', original: original.store },
+      { ...input(), notes: '管理者の最新情報' },
+    )
+    await expect(
+      approveStoreRequestInDb(db, 'stale-request'),
+    ).rejects.toBeInstanceOf(StoreConflictError)
+    expect((await admin.doc('stores/stale').get()).data()?.notes).toBe(
+      '管理者の最新情報',
+    )
+    expect(
+      (await admin.doc('storeRequests/stale-request').get()).data()?.status,
+    ).toBe('pending')
+    await rejectStoreRequestInDb(db, 'stale-request')
+  })
+
+  it('同じPlaceの同時承認では1件だけを登録し、残りの申請を未処理に保つ', async () => {
+    const placeId = 'ChIJ_duplicate_requests'
+    await submitStoreRequestToDb(
+      client,
+      target('duplicate-a', placeId),
+      input(),
+    )
+    await submitStoreRequestToDb(
+      client,
+      target('duplicate-b', placeId),
+      input(),
+    )
+    const results = await Promise.allSettled([
+      approveStoreRequestInDb(manager(), 'duplicate-a'),
+      approveStoreRequestInDb(manager(), 'duplicate-b'),
+    ])
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1)
+    expect((await admin.collection('stores').get()).size).toBe(1)
+    expect(await readPendingStoreRequestCount(manager())).toBe(1)
+    const failed = results.find((result) => result.status === 'rejected')
+    expect(failed?.status === 'rejected' && failed.reason).toBeInstanceOf(
+      StoreConflictError,
+    )
+  })
+
+  it('承認内容と異なる店舗を書き込むと、店舗・紐付け・申請のすべてを保存しない', async () => {
+    await submitStoreRequestToDb(client, target('atomic'), input())
+    const db = manager()
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'stores/atomic'), {
+      ...newPayload(),
+      googlePlaceId: 'ChIJ_atomic',
+      notes: '申請内容とは異なる値',
+    })
+    batch.set(doc(db, 'placeLinks/ChIJ_atomic'), { storeId: 'atomic' })
+    batch.update(doc(db, 'storeRequests/atomic'), {
+      status: 'approved',
+      reviewedAt: serverTimestamp(),
+    })
+    await assertFails(batch.commit())
+    expect((await admin.doc('stores/atomic').get()).exists).toBe(false)
+    expect((await admin.doc('placeLinks/ChIJ_atomic').get()).exists).toBe(false)
+    expect((await admin.doc('storeRequests/atomic').get()).data()?.status).toBe(
+      'pending',
+    )
+  })
+
+  it('申請を20件ずつ取得し、件数と次ページを欠落なく返す', async () => {
+    const batch = admin.batch()
+    for (let i = 0; i < 21; i++) {
+      const id = `page-${String(i).padStart(2, '0')}`
+      batch.set(admin.doc(`storeRequests/${id}`), {
+        ...payload(id),
+        createdAt: AdminTimestamp.fromMillis(i),
+      })
+    }
+    await batch.commit()
+    const db = manager()
+    expect(await readPendingStoreRequestCount(db)).toBe(21)
+    const first = await readPendingStoreRequests(db)
+    expect(first.requests).toHaveLength(20)
+    expect(first.nextCursor).not.toBeNull()
+    const next = await readPendingStoreRequests(db, first.nextCursor!)
+    expect(next.requests.map((request) => request.id)).toEqual(['page-20'])
+    expect(next.nextCursor).toBeNull()
   })
 })

@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { MapPage } from '@/features/map/map-page'
 import { AdminLoginPage } from '@/features/auth/admin-login-page'
+import { StoreRequestsPage } from '@/features/store-requests/store-requests-page'
 import { Toaster } from '@/components/ui/toaster'
 
 const rootRoute = createRootRoute({
@@ -38,8 +39,19 @@ const loginRoute = createRoute({
   path: '/admin-login',
   component: AdminLoginPage,
 })
+
+const storeRequestsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin/store-requests',
+  component: StoreRequestsPage,
+})
+
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([indexRoute, loginRoute]),
+  routeTree: rootRoute.addChildren([
+    indexRoute,
+    loginRoute,
+    storeRequestsRoute,
+  ]),
   defaultPreload: false,
 })
 

@@ -4,6 +4,7 @@ import {
   fireEvent,
   render as renderUI,
   screen,
+  waitFor,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +23,7 @@ import type { ConveniencePlace } from '../places/nearby-places'
 import type { PlaceLinks } from '../places/place-links'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Timestamp } from 'firebase/firestore'
 
 function render(ui: ReactNode) {
   return renderUI(ui, { wrapper: ThemeProvider })
@@ -37,7 +39,33 @@ const admin = vi.hoisted(() => ({
   refreshAccess: vi.fn(),
 }))
 const navigate = vi.hoisted(() => vi.fn())
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigate,
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}))
+vi.mock('../store-requests/use-store-requests', () => ({
+  storeRequestKeys: { all: ['storeRequests'] },
+  usePendingStoreRequestCount: () => ({
+    data: undefined,
+    isPending: false,
+    isFetching: false,
+    isError: false,
+  }),
+}))
+const requests = vi.hoisted(() => ({
+  allocate: vi.fn(() => 'request-fixed'),
+  readStore: vi.fn(),
+  submit: vi.fn(),
+}))
+vi.mock('../store-requests/store-request-repository', () => ({
+  allocateStoreRequestId: () => requests.allocate(),
+  readStoreForRequest: (...args: unknown[]) => requests.readStore(...args),
+  submitStoreRequest: (...args: unknown[]) => requests.submit(...args),
+}))
 const writer = vi.hoisted(() => ({
   allocate: vi.fn(() => 'new-fixed'),
   save: vi.fn(),
@@ -240,6 +268,8 @@ beforeEach(() => {
   maps.getZoom.mockReset().mockReturnValue(14)
   localStorage.clear()
   writer.save.mockReset().mockResolvedValue('new-fixed')
+  requests.readStore.mockReset()
+  requests.submit.mockReset().mockResolvedValue('request-fixed')
   storeQuery.refetch.mockImplementation(async () => ({
     data: storeQuery.data,
     isError: false,
@@ -359,7 +389,7 @@ describe('管理者操作と地図画面の連携', () => {
     ).toBeVisible()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
-  it('一般利用者には登録・編集・ログイン入口を表示しない', async () => {
+  it('一般利用者には直接登録・直接編集・ログイン入口を表示しない', async () => {
     admin.status = 'signedOut'
     const user = renderAdmin()
     expect(
@@ -371,6 +401,7 @@ describe('管理者操作と地図画面の連携', () => {
     expect(
       screen.queryByRole('button', { name: '店舗を編集' }),
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '修正を申請' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: '管理者ログイン' }),
     ).not.toBeInTheDocument()
@@ -876,6 +907,108 @@ describe('Placesのピンと登録情報', () => {
     expect(
       screen.queryByRole('button', { name: 'トイレ情報を登録' }),
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '登録を申請' })).toBeVisible()
+  })
+  it('未ログインの登録申請は公開店舗を更新せず、承認待ちを案内する', async () => {
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MapPage config={config} />
+      </QueryClientProvider>,
+    )
+    await user.click(
+      screen.getByRole('button', { name: `${place.name}・データなし` }),
+    )
+    await user.click(screen.getByRole('button', { name: '登録を申請' }))
+    await chooseSelectOption(user, '貸出状況', '利用不可')
+    await user.click(screen.getByRole('button', { name: '申請する' }))
+    expect(await screen.findByText(/申請を送信しました/)).toBeVisible()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('トイレ情報：データなし')).toBeVisible()
+    expect(requests.submit).toHaveBeenCalledWith(
+      {
+        requestId: 'request-fixed',
+        kind: 'create',
+        targetStoreId: 'request-fixed',
+        googlePlaceId: place.id,
+        baseUpdatedAt: null,
+      },
+      expect.objectContaining({ name: place.name, location: place.location }),
+    )
+    expect(writer.save).not.toHaveBeenCalled()
+    expect(storeQuery.refetch).not.toHaveBeenCalled()
+    expect(linksQuery.refetch).not.toHaveBeenCalled()
+    expect(placesQuery.search).not.toHaveBeenCalled()
+  })
+  it('修正申請は最新の店舗情報と精度を保持した更新日時を使う', async () => {
+    const store = {
+      ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
+      id: 'registered',
+      googlePlaceId: place.id,
+    }
+    const current = { ...store, name: '最新の店名' }
+    const baseUpdatedAt = new Timestamp(1000, 123456789)
+    storeQuery.data = { stores: [store], invalidCount: 0, truncated: false }
+    linksQuery.data = { [place.id]: store }
+    requests.readStore.mockResolvedValue({ store: current, baseUpdatedAt })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MapPage config={config} />
+      </QueryClientProvider>,
+    )
+    await user.click(
+      screen.getByRole('button', { name: `${store.name}・利用可` }),
+    )
+    await user.click(screen.getByRole('button', { name: '修正を申請' }))
+    expect(await screen.findByRole('textbox', { name: '店名' })).toHaveValue(
+      current.name,
+    )
+    await user.type(screen.getByLabelText('備考'), '修正申請の追記')
+    await user.click(screen.getByRole('button', { name: '申請する' }))
+    await waitFor(() => expect(requests.submit).toHaveBeenCalledOnce())
+    expect(requests.submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'update',
+        requestId: 'request-fixed',
+        targetStoreId: store.id,
+        baseUpdatedAt,
+      }),
+      expect.objectContaining({
+        name: current.name,
+        location: current.location,
+      }),
+    )
+    expect(writer.save).not.toHaveBeenCalled()
+  })
+  it('修正申請の準備に失敗したら入力画面を開かず、同じ操作から再試行できる', async () => {
+    const store = {
+      ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
+      id: 'registered',
+      googlePlaceId: place.id,
+    }
+    linksQuery.data = { [place.id]: store }
+    requests.readStore
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ store, baseUpdatedAt: new Timestamp(1000, 1) })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MapPage config={config} />
+      </QueryClientProvider>,
+    )
+    await user.click(
+      screen.getByRole('button', { name: `${store.name}・利用可` }),
+    )
+    await user.click(screen.getByRole('button', { name: '修正を申請' }))
+    expect(
+      await screen.findByText(/修正申請の準備ができませんでした/),
+    ).toBeVisible()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '修正を申請' }))
+    expect(
+      await screen.findByRole('dialog', { name: '修正を申請' }),
+    ).toBeVisible()
   })
   it.each(['pending', 'error', 'disabled'])(
     '%sでは未登録と断定せず、登録操作も出さない',
