@@ -21,6 +21,34 @@ function run(command, args, input) {
   return result.stdout
 }
 
+function parseResponse(output, valid) {
+  try {
+    const response = JSON.parse(output)
+    if (valid(response)) return response
+  } catch {
+    // JSON parser errors can contain the response, including secret data.
+  }
+  throw new Error('Invalid Secret Manager response; sync stopped.')
+}
+
+function decodePayload(response) {
+  const data = response?.payload?.data
+  if (
+    typeof data !== 'string' ||
+    !/^[A-Za-z0-9+/_-]*={0,2}$/.test(data) ||
+    (data.includes('=') && data.length % 4 !== 0)
+  )
+    return null
+  const bytes = Buffer.from(data, 'base64')
+  const normalized = data
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .replace(/=+$/, '')
+  return bytes.toString('base64').replace(/=+$/, '') === normalized
+    ? bytes
+    : null
+}
+
 export function syncAppHostingSecrets(env = process.env, execute = run) {
   for (const name of [
     'FIREBASE_PROJECT_ID',
@@ -37,20 +65,85 @@ export function syncAppHostingSecrets(env = process.env, execute = run) {
     throw new Error('VITE_GOOGLE_MAPS_MAP_ID must be a production Map ID')
 
   const projectArgs = ['--project', env.FIREBASE_PROJECT_ID, '--quiet']
+  const invoke = (command, args, input) => {
+    try {
+      return execute(command, args, input)
+    } catch {
+      // Never propagate CLI output or errors containing secret values.
+      throw new Error(
+        `${command} ${args[0]} failed; check deployment IAM and API configuration.`,
+      )
+    }
+  }
   const existing = new Set(
-    execute('gcloud', [
-      'secrets',
-      'list',
-      '--format=value(name)',
-      ...projectArgs,
-    ])
-      .trim()
-      .split('\n')
-      .map((name) => name.split('/').pop()),
+    parseResponse(
+      invoke('gcloud', [
+        'secrets',
+        'list',
+        '--format=json(name)',
+        ...projectArgs,
+      ]),
+      (items) =>
+        Array.isArray(items) &&
+        items.every(
+          (item) =>
+            typeof item?.name === 'string' &&
+            /^projects\/[^/]+\/secrets\/[A-Za-z0-9_-]+$/.test(item.name),
+        ),
+    ).map((item) => item.name.split('/').pop()),
   )
-  for (const name of secretNames) {
+
+  // Finish every read before creating secrets or adding any versions.
+  const changed = secretNames.filter((name) => {
+    if (!existing.has(name)) return true
+    const versions = parseResponse(
+      invoke('gcloud', [
+        'secrets',
+        'versions',
+        'list',
+        `--secret=${name}`,
+        '--format=json(name,state)',
+        ...projectArgs,
+      ]),
+      (items) =>
+        Array.isArray(items) &&
+        items.every(
+          (item) =>
+            typeof item?.name === 'string' &&
+            new RegExp(
+              `^projects/[^/]+/secrets/${name}/versions/[1-9][0-9]*$`,
+            ).test(item.name) &&
+            ['ENABLED', 'DISABLED', 'DESTROYED'].includes(item.state),
+        ),
+    )
+    if (versions.length === 0) return true
+    const latest = versions.reduce((newest, item) =>
+      BigInt(item.name.split('/').pop()) > BigInt(newest.name.split('/').pop())
+        ? item
+        : newest,
+    )
+    if (latest.state !== 'ENABLED')
+      throw new Error(
+        `Latest version for ${name} is not enabled; sync stopped.`,
+      )
+    const response = parseResponse(
+      invoke('gcloud', [
+        'secrets',
+        'versions',
+        'access',
+        latest.name.split('/').pop(),
+        `--secret=${name}`,
+        '--format=json',
+        ...projectArgs,
+      ]),
+      (item) => item?.name === latest.name && decodePayload(item) !== null,
+    )
+    return !decodePayload(response).equals(Buffer.from(env[name], 'utf8'))
+  })
+
+  for (const name of changed) {
     if (!existing.has(name)) {
-      execute('gcloud', [
+      invoke('gcloud', [
         'secrets',
         'create',
         name,
@@ -59,13 +152,13 @@ export function syncAppHostingSecrets(env = process.env, execute = run) {
       ])
     }
     // Send values through stdin, never command arguments or plaintext files.
-    execute(
+    invoke(
       'gcloud',
       ['secrets', 'versions', 'add', name, '--data-file=-', ...projectArgs],
       env[name],
     )
   }
-  execute('pnpm', [
+  invoke('pnpm', [
     'exec',
     'firebase',
     'apphosting:secrets:grantaccess',
@@ -76,6 +169,7 @@ export function syncAppHostingSecrets(env = process.env, execute = run) {
     env.FIREBASE_PROJECT_ID,
     '--non-interactive',
   ])
+  return { added: changed.length, skipped: secretNames.length - changed.length }
 }
 
 if (
@@ -83,8 +177,10 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    syncAppHostingSecrets()
-    console.log('App Hosting secrets synced (values omitted).')
+    const { added, skipped } = syncAppHostingSecrets()
+    console.log(
+      `App Hosting secrets synced: ${added} added, ${skipped} skipped.`,
+    )
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1
