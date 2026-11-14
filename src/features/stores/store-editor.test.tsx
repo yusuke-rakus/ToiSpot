@@ -118,19 +118,68 @@ it('未ログインでも新規登録を申請し、店舗へ直接保存しな�
   expect(onSaved).not.toHaveBeenCalled()
 })
 
+it.each([false, true])(
+  '未ログインの申請では店名と住所を変更できず、元の値を送信する（既存店舗: %s）',
+  async (edit) => {
+    mock.status = 'signedOut'
+    const { user, onRequested } = setup(edit, undefined, true)
+    const name = screen.getByRole('textbox', { name: '店名' })
+    const address = screen.getByRole('textbox', { name: '住所' })
+    const originalName = (name as HTMLInputElement).value
+    const originalAddress = (address as HTMLInputElement).value
+    expect(name).toBeDisabled()
+    expect(address).toBeDisabled()
+    await user.type(name, '変更した店名')
+    await user.type(address, '変更した住所')
+    expect(name).toHaveValue(originalName)
+    expect(address).toHaveValue(originalAddress)
+    await chooseSelectOption(user, '貸出状況', '利用不可')
+    await user.type(screen.getByLabelText('備考'), '貸出状況を確認しました')
+    await user.click(screen.getByRole('button', { name: '申請する' }))
+    await waitFor(() => expect(onRequested).toHaveBeenCalledOnce())
+    expect(mock.request).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: edit ? 'update' : 'create' }),
+      expect.objectContaining({
+        name: originalName,
+        address: originalAddress,
+        availability: 'unavailable',
+        notes: expect.stringContaining('貸出状況を確認しました'),
+      }),
+    )
+  },
+)
+
+it('管理者の直接保存では店名と住所を編集できる', async () => {
+  const { user, onSaved } = setup(true)
+  const name = screen.getByLabelText('店名')
+  const address = screen.getByLabelText('住所')
+  expect(name).toBeEnabled()
+  expect(address).toBeEnabled()
+  await user.clear(name)
+  await user.type(name, '変更した店名')
+  await user.clear(address)
+  await user.type(address, '変更した住所')
+  await user.click(screen.getByRole('button', { name: '保存する' }))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+  expect(mock.save).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ name: '変更した店名', address: '変更した住所' }),
+  )
+})
+
 it('既存店舗の修正を申請し、失敗時も入力と申請先を維持する', async () => {
   mock.status = 'signedOut'
   mock.request
     .mockRejectedValueOnce({ code: 'permission-denied' })
     .mockResolvedValueOnce('request-fixed')
   const { user, onRequested } = setup(true, undefined, true)
-  await user.clear(screen.getByLabelText('店名'))
-  await user.type(screen.getByLabelText('店名'), '修正を提案した店名')
+  await user.clear(screen.getByLabelText('備考'))
+  await user.type(screen.getByLabelText('備考'), '修正を提案した備考')
   await user.click(screen.getByRole('button', { name: '申請する' }))
   expect(
     await screen.findByText(/店舗情報が更新・登録された可能性/),
   ).toBeVisible()
-  expect(screen.getByLabelText('店名')).toHaveValue('修正を提案した店名')
+  expect(screen.getByLabelText('備考')).toHaveValue('修正を提案した備考')
   expect(mock.refreshAccess).not.toHaveBeenCalled()
   await user.click(screen.getByRole('button', { name: '申請する' }))
   await waitFor(() => expect(onRequested).toHaveBeenCalledOnce())
@@ -142,7 +191,7 @@ it('既存店舗の修正を申請し、失敗時も入力と申請先を維持�
       targetStoreId: 'sample-tokyo-01',
     }),
     expect.objectContaining({
-      name: '修正を提案した店名',
+      notes: '修正を提案した備考',
       location: { lat: 35.6818, lng: 139.764 },
     }),
   )
