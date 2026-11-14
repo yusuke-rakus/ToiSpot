@@ -90,6 +90,7 @@ export function StoreEditor({
   // 認証状態が変化しても、入力開始時の保存先を切り替えない。
   const [operation] = useState(() => ({ mode, requestTarget }))
   const requesting = operation.mode === 'request'
+  const storeIdentityDisabled = requesting && admin.status !== 'admin'
   const [returnFocus] = useState(() =>
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -199,7 +200,12 @@ export function StoreEditor({
     return field(
       name,
       label,
-      <Input className="h-10" {...attrs(name)} {...register(name)} />,
+      <Input
+        className="h-10"
+        disabled={storeIdentityDisabled}
+        {...attrs(name)}
+        {...register(name)}
+      />,
     )
   }
   function select(
@@ -222,7 +228,7 @@ export function StoreEditor({
             disabled={saving || !allowed}
           >
             <SelectTrigger
-              className="w-full text-base data-[size=default]:h-10 md:text-sm"
+              className="w-full"
               {...attrs(name, descriptionId)}
               ref={ref}
               onBlur={onBlur}
