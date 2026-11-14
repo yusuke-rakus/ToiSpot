@@ -222,7 +222,7 @@ export function StoreEditor({
             disabled={saving || !allowed}
           >
             <SelectTrigger
-              className="w-full text-base data-[size=default]:h-10 md:text-sm"
+              className="w-full"
               {...attrs(name, descriptionId)}
               ref={ref}
               onBlur={onBlur}
