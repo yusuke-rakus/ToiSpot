@@ -48,9 +48,18 @@ function cloud(
           .filter((name) => !missing.includes(name))
           .map((name) => ({ name: `projects/test-project/secrets/${name}` })),
       )
-    const name = args.find((arg) => arg.startsWith('--secret='))?.slice(9)
-    if (args[2] === 'list')
+    const name =
+      args[2] === 'list'
+        ? args[3]
+        : args.find((arg) => arg.startsWith('--secret='))?.slice(9)
+    if (args[2] === 'list') {
+      assert(
+        secretNames.includes(name),
+        'versions list requires a positional secret name',
+      )
+      assert(!args.some((arg) => arg.startsWith('--secret=')))
       return JSON.stringify(histories[name] ?? [version(name)])
+    }
     if (args[2] === 'access')
       return payload(name, values[name] ?? env[name], args[3])
     assert(args[1] === 'create' || args[2] === 'add', 'unexpected command')
@@ -230,7 +239,11 @@ for (const [stage, output] of [
       missing: [secretNames[0]],
       intercept: ({ args }) => {
         if (stage === 'secrets' && args[1] === 'list') return output
-        if (!args.includes('--secret=VITE_GOOGLE_MAPS_MAP_ID')) return
+        if (
+          !args.includes('--secret=VITE_GOOGLE_MAPS_MAP_ID') &&
+          !(args[2] === 'list' && args[3] === 'VITE_GOOGLE_MAPS_MAP_ID')
+        )
+          return
         if (stage === 'versions' && args[2] === 'list') return output
         if (stage === 'access' && args[2] === 'access') return output
       },
@@ -274,7 +287,11 @@ if (process.env.MOCK_FAIL === 'true') {
   console.error(values.VITE_GOOGLE_MAPS_API_KEY);
   process.exit(1);
 }
-const name = args.find(a => a.startsWith('--secret='))?.slice(9);
+if (args[2] === 'list' && (args[3]?.startsWith('-') || !names.includes(args[3]))) {
+  console.error('versions list requires a positional secret name');
+  process.exit(2);
+}
+const name = args[2] === 'list' ? args[3] : args.find(a => a.startsWith('--secret='))?.slice(9);
 const resource = 'projects/test-project/secrets/' + name;
 if (args[1] === 'list') console.log(JSON.stringify(names.map(n => ({name: 'projects/test-project/secrets/' + n}))));
 else if (args[2] === 'list') console.log(JSON.stringify([{name: resource + '/versions/15', state: 'ENABLED'}]));
