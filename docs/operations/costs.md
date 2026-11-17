@@ -2,7 +2,7 @@
 
 [概要](../../README.md) · [文書一覧](../README.md)
 
-調査日：2026-11-02。料金の調査結果を維持し、公開前に最新条件を再確認する。
+当初調査日：2026-11-02。料金の調査結果を維持し、公開前に最新条件を再確認する。2026-11-15に場所検索の追加分と課金確認先を追記した。
 
 App Hostingへの公開にはBlazeプランが必要。旧Firebase Hostingの無料枠をそのまま適用せず、Cloud Run・Cloud Build・Artifact Registry等の費用も確認する。`apphosting.yaml`のインスタンス数制限は無料を保証しない。出典：[App Hostingの料金](https://firebase.google.com/docs/app-hosting/costs)。
 
@@ -39,7 +39,7 @@ Hostingの個別資料には転送10GB／月という記載があり、料金表
 - 月20,000回なら、Mapsだけで概算70米ドル。税・通貨換算・他サービスの料金は含まない。
 - ピンの追加や通常の地図移動は、それ自体で地図ロードを増やさない。地図インスタンスの再作成には注意する。
 - 店舗100件の取得は、基本的に100ドキュメント分の読み取りになる。位置検索の重複・範囲外候補・インデックスなどによる追加分も考慮する。
-- 検索回数、地図ロード数、Firestore読み取り件数、Hosting転送量は別々に把握する。
+- Nearby Search・Autocomplete Requests・Place Detailsの利用量、地図ロード数、Firestore読み取り件数、Hosting転送量は別々に把握する。
 - 開発中と管理画面の利用も試算に含める。Mapsの利用量は同一請求先に関連付けた他プロジェクトと集計されるため、その利用状況も確認する。
 
 出典：[Maps FAQ](https://developers.google.com/maps/faq)、[Mapsの料金集計](https://developers.google.com/maps/billing-and-pricing/overview)、[Firestoreの位置検索](https://firebase.google.com/docs/firestore/solutions/geoqueries)。
@@ -70,10 +70,23 @@ Hostingの個別資料には転送10GB／月という記載があり、料金表
 
 Nearby Searchは地図ロードと別のPlaces API Nearby Search Proの利用になる。今回取得するのはID・店名・住所・座標・提供元だけで、営業時間・評価・写真などは要求しない。公式グローバル料金表では月5,000検索が無料、最初の有料帯は1,000検索あたり32米ドル。無料枠は請求先に紐付く他プロジェクトと合わせて確認する。
 
-初回は位置情報の結果を待って1回検索し、その後は「この周辺を検索」・現在地・手動再試行だけで呼び出す。地図移動、詳細開閉、Firestoreの更新や保存では検索しない。Placesの利用制限・通知を地図ロードとは別に設定する。Places API（New）の有効化とキー制限の設定はクラウド側で別途必要で、今回自動変更していない。
+当初の手動モードでは初回の位置情報の結果を待って1回検索し、その後は「この周辺を検索」・現在地・手動再試行で呼び出す。現在は場所候補の選択後も周辺検索を行う。自動モードでは地図操作後の表示範囲を検索し、上限付きの分割取得では1回の検索操作が複数のNearby Searchリクエストになる。詳細開閉、Firestoreの更新や保存、条件の絞り込みではNearby Searchを増やさない。Placesの利用制限・通知を地図ロードとは別に設定する。Places API（New）の有効化とキー制限の設定はクラウド側で別途必要で、今回自動変更していない。
 
 Firestoreでは表示したPlaces候補1件につき紐付け1件、紐付いていれば店舗1件を追加照会する。これは周辺店舗のgeohash検索の読み取りと別に見積もる。検索結果全体は端末の永続キャッシュやDBへ保存しない。管理者が選択して登録する店舗情報の保存・更新は別に扱う。
 
 Maps Demo KeyはPlaceクラス・Places API（New）にも対応するが、試作用の日次上限があり、本番公開には使わない。
 
 出典：[Google Maps料金表](https://developers.google.com/maps/billing-and-pricing/pricing)、[Maps Demo Key](https://developers.google.com/maps/documentation/javascript/demo-key)。公開前に適用料金と制限を再確認する。
+
+## 場所検索の追加（2026-11-15）
+
+駅名・地名・住所・店舗名の候補取得にはAutocomplete Data APIを使い、選択後の座標取得にはPlace Detailsの`location`だけを要求する。候補の名称を再取得するための`displayName`や、営業時間・評価・写真は要求しない。場所候補の取得・座標取得・その後のNearby Searchは別の利用量になる。
+
+確認する料金項目は`Autocomplete Requests`と`Place Details Essentials`。同じ入力操作のセッショントークンを候補選択時のPlace Detailsへ引き継ぐ。Essentialsで終了するセッションも候補問い合わせがすべて無料になるわけではなく、最初の最大12問い合わせと終了時のPlace Detailsが課金対象になる。候補を選ばず終了したセッションは問い合わせ単位で扱われる。月間無料枠と超過時の単価は、以下の公式ページと実際の請求先設定で確認する。
+
+- [Place Autocompleteとセッション料金設定](https://developers.google.com/maps/documentation/javascript/session-pricing?hl=ja)：セッションの開始・終了と課金の仕組み。
+- [Google Maps Platformの料金表](https://developers.google.com/maps/billing-and-pricing/pricing?hl=ja)：Autocomplete Requests・Place Details Essentialsの無料枠と単価。
+
+候補取得は前後の空白を除いた2文字以上の入力が止まってから750ms後に行う。空入力・日本語変換中は問い合わせず、古い応答を表示しない。送信済みのリクエストは取り消せないため、無視した応答の通信も利用量に含める。セッショントークンや待機時間は無料利用を保証する仕組みではない。
+
+利用可否・設備・チェーンの条件変更は取得済みデータへ端末内で適用する。追加のGoogle API呼び出しやFirestore読み取りは行わず、検索履歴も保存しない。Firestoreのスキーマ・Rules・インデックスの変更は不要。公開時はAutocomplete・Place Detailsの利用量も既存のNearby Searchと分けて確認し、必要な上限・通知を設定する。クラウド設定・クォータ・通知の自動変更は行っていない。
