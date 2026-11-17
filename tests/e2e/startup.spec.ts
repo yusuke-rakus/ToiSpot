@@ -48,5 +48,5 @@ test('存在しないURLからトップへ戻れる', async ({ page }) => {
   await page.getByRole('link', { name: 'トップに戻る' }).click()
   await expect(
     page.getByRole('heading', { name: 'コンビニトイレマップ' }),
-  ).toBeVisible()
+  ).toBeAttached()
 })

@@ -60,18 +60,18 @@ describe('表示範囲に連動する検索', () => {
     })
     expect(onSearch).toHaveBeenCalledOnce()
   })
-  it('連続操作の最後の範囲だけを検索し、移動開始で古い処理を中断する', () => {
+  it('小数ズームの連続操作でも最後の範囲だけを検索し、移動開始で古い処理を中断する', () => {
     const { result } = setup()
     act(() => vi.advanceTimersByTime(300))
     onSearch.mockClear()
     act(() => {
-      view = { ...view, center: { lat: 35.69, lng: 139.77 } }
+      view = { ...view, center: { lat: 35.69, lng: 139.77 }, zoom: 14.75 }
       result.current.onChange(view)
       result.current.onIdle()
       vi.advanceTimersByTime(200)
     })
     act(() => {
-      view = { ...view, zoom: 15 }
+      view = { ...view, zoom: 15.25 }
       result.current.onChange(view)
       result.current.onIdle()
       vi.advanceTimersByTime(299)

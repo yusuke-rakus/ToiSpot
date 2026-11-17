@@ -1,14 +1,4 @@
-function pinFilename(name: string) {
-  const normalized = name
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[\s\p{Dash}]/gu, '')
-  if (/^(セブンー?イレブン|7eleven|seveneleven)/.test(normalized))
-    return 'seven-eleven.svg'
-  if (/^(ローソン|lawson)/.test(normalized)) return 'lawson.svg'
-  if (/^(ファミリーマート|familymart)/.test(normalized)) return 'familymart.svg'
-  return 'convenience-store.svg'
-}
+import { classifyChain } from '../search/search-filters'
 
 export function MapMarkerPin({
   name,
@@ -20,11 +10,13 @@ export function MapMarkerPin({
   neutral?: boolean
 }) {
   const directory = neutral ? 'icons/map-pins/neutral' : 'icons/map-pins'
+  const chain = classifyChain(name)
+  const filename = chain === 'other' ? 'convenience-store.svg' : `${chain}.svg`
   return (
     <img
       className="map-marker-pin"
       data-selected={selected}
-      src={`${import.meta.env.BASE_URL}${directory}/${pinFilename(name)}`}
+      src={`${import.meta.env.BASE_URL}${directory}/${filename}`}
       width="28"
       height="36"
       alt=""

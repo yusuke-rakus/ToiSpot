@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -17,7 +18,14 @@ import {
   type MapMouseEvent,
 } from '@vis.gl/react-google-maps'
 import { useNavigate } from '@tanstack/react-router'
-import { CircleAlert, LocateFixed, MapPin, RotateCcw, X } from 'lucide-react'
+import {
+  CircleAlert,
+  List,
+  LocateFixed,
+  MapPin,
+  RotateCcw,
+  X,
+} from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
@@ -31,7 +39,22 @@ import {
   EmptyContent,
 } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
-import { AppHeader } from '@/components/app-header'
+import { AppHeaderActions } from '@/components/app-header'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { DestinationSearch } from '@/features/search/destination-search'
+import type { SearchDestination } from '@/features/search/use-destination-search'
+import { FilterControls } from '@/features/search/filter-controls'
+import {
+  EMPTY_SEARCH_FILTERS,
+  activeFilterCount,
+  filterMapEntries,
+  type SearchFilters,
+} from '@/features/search/search-filters'
 import { useTheme } from '@/components/theme-provider'
 import { firebaseConnection, usesFirebaseEmulators } from '@/lib/firebase'
 import { useStores } from '@/features/stores/use-stores'
@@ -97,6 +120,26 @@ function isMobileLayout() {
 }
 
 export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
+  const content = <MapPageContent config={config} />
+  return config.apiKey ? (
+    <APIProvider
+      apiKey={config.apiKey}
+      libraries={libraries}
+      language="ja"
+      region="JP"
+      version="quarterly"
+      onError={() => {
+        // SDKのエラー本文にはAPIキーが含まれる可能性がある。
+      }}
+    >
+      {content}
+    </APIProvider>
+  ) : (
+    content
+  )
+}
+
+function MapPageContent({ config }: { config: MapConfig }) {
   const placesConfig = config.places ?? DEFAULT_PLACES_CONFIG
   const [searchTarget, setSearchTarget] = useState<SearchArea>(INITIAL_CENTER)
   const searchCenter = areaCenter(searchTarget)
@@ -104,7 +147,50 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   const [zoomPaused, setZoomPaused] = useState(false)
   const searchSuspended = useRef(placesConfig.autoSearch)
   const searchEpoch = useRef(0)
-  const [area, setArea] = useState<'initial' | 'location' | 'map'>('initial')
+  const [area, setArea] = useState<
+    'initial' | 'location' | 'map' | 'destination'
+  >('initial')
+  const [filters, setFilters] = useState<SearchFilters>(EMPTY_SEARCH_FILTERS)
+  const [destination, setDestination] = useState<
+    (SearchDestination & { requestId: number }) | null
+  >(null)
+  const [locationRequest, setLocationRequest] = useState(0)
+  const [searchCloseSignal, setSearchCloseSignal] = useState(0)
+  const [mapControls, setMapControls] = useState({
+    ready: false,
+    locating: false,
+  })
+  const [mobileListOpen, setMobileListOpen] = useState(false)
+  const [searchExpanded, setSearchExpanded] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [sheetElement, setSheetElement] = useState<HTMLDivElement | null>(null)
+  const [sheetHeight, setSheetHeight] = useState(0)
+  const floatingSearchRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!sheetElement) return
+    const observer = new ResizeObserver(() =>
+      setSheetHeight(sheetElement.getBoundingClientRect().height),
+    )
+    observer.observe(sheetElement)
+    return () => observer.disconnect()
+  }, [sheetElement])
+  useEffect(() => {
+    const resize = () => {
+      const node = floatingSearchRef.current
+      if (node)
+        node.style.setProperty(
+          '--search-available-height',
+          `${Math.max(120, (window.visualViewport?.height ?? window.innerHeight) - node.getBoundingClientRect().top - 12)}px`,
+        )
+    }
+    resize()
+    window.visualViewport?.addEventListener('resize', resize)
+    window.addEventListener('resize', resize)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', resize)
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
   const places = useNearbyPlaces()
   const links = usePlaceLinks(
     places.places,
@@ -124,6 +210,11 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   const requestPreparation = useRef<AbortController | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const mobileScrollRef = useRef<HTMLDivElement>(null)
+  const listScrollTop = useRef(0)
+  const listReturnLabel = useRef<string | null>(null)
+  const focusDetail = useRef(false)
+  const restoreListFocus = useRef(false)
   const sheetTrigger = useRef<HTMLElement | null>(null)
   const isMobile = useSyncExternalStore(subscribeToMobileLayout, isMobileLayout)
   const [selection, setSelection] = useState<
@@ -136,7 +227,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
   useEffect(() => {
     if (panelRef.current) panelRef.current.scrollTop = 0
   }, [selection])
-  const entries = mergeMapEntries(
+  const allEntries = mergeMapEntries(
     storesQuery.data?.stores ?? [],
     places.places,
     links.data,
@@ -147,6 +238,8 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
         : 'ready',
     searchCenter,
   )
+  const entries = filterMapEntries(allEntries, filters)
+  const hasFilters = activeFilterCount(filters) > 0
   const stores = entries.flatMap((entry) => (entry.store ? [entry.store] : []))
   const selectedEntry =
     selection?.kind === 'place'
@@ -156,12 +249,56 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     selection?.kind === 'store'
       ? (stores.find((store) => store.id === selection.id) ?? null)
       : (selectedEntry?.store ?? null)
-  if (isMobile && selection && !selectedEntry && !selectedStore) {
+  if (selection && !selectedEntry && !selectedStore) {
     setSelection(null)
   }
+  useLayoutEffect(() => {
+    if (mobileScrollRef.current)
+      mobileScrollRef.current.scrollTop = selection ? 0 : listScrollTop.current
+    if (selection && focusDetail.current) {
+      mobileScrollRef.current?.focus({ preventScroll: true })
+      focusDetail.current = false
+    } else if (
+      !selection &&
+      restoreListFocus.current &&
+      mobileScrollRef.current
+    ) {
+      const buttons = [
+        ...mobileScrollRef.current.querySelectorAll<HTMLButtonElement>(
+          'button[aria-label]',
+        ),
+      ]
+      const row =
+        buttons.find(
+          (button) =>
+            button.getAttribute('aria-label') === listReturnLabel.current,
+        ) ??
+        buttons.find((button) =>
+          button.getAttribute('aria-label')?.endsWith('の詳細を見る'),
+        )
+      row?.focus({ preventScroll: true })
+      restoreListFocus.current = false
+    }
+  }, [selection, mobileListOpen])
   const clearSelection = () => setSelection(null)
-  const selectPlace = (id: string) => setSelection({ kind: 'place', id })
-  const selectStore = (id: string) => setSelection({ kind: 'store', id })
+  function rememberListFocus() {
+    const active = document.activeElement
+    const fromList =
+      active instanceof HTMLElement &&
+      Boolean(mobileScrollRef.current?.contains(active))
+    listReturnLabel.current = fromList
+      ? active.getAttribute('aria-label')
+      : null
+    focusDetail.current = fromList
+  }
+  const selectPlace = (id: string) => {
+    rememberListFocus()
+    setSelection({ kind: 'place', id })
+  }
+  const selectStore = (id: string) => {
+    rememberListFocus()
+    setSelection({ kind: 'store', id })
+  }
   const search = places.search
   const cancel = places.cancel
   const suspendSearch = useCallback(
@@ -175,7 +312,10 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     [cancel, setSuspended, setZoomPaused],
   )
   const searchArea = useCallback(
-    (target: SearchArea, source: 'initial' | 'location' | 'map') => {
+    (
+      target: SearchArea,
+      source: 'initial' | 'location' | 'map' | 'destination',
+    ) => {
       searchSuspended.current = false
       searchEpoch.current += 1
       setSearchTarget(target)
@@ -217,6 +357,22 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     (viewport: MapViewport) => searchArea(viewport, 'map'),
     [searchArea],
   )
+  function closeResultPanel() {
+    setMobileListOpen(false)
+    setSelection(null)
+  }
+  function chooseDestination(point: SearchDestination) {
+    closeResultPanel()
+    listScrollTop.current = 0
+    setDestination((previous) => ({
+      ...point,
+      requestId: (previous?.requestId ?? 0) + 1,
+    }))
+    setArea('destination')
+    if (placesConfig.autoSearch) suspendSearch(false)
+    else searchArea(point.location, 'destination')
+  }
+  const clearFilters = () => setFilters(EMPTY_SEARCH_FILTERS)
   async function refreshRegistration() {
     const epoch = searchEpoch.current
     if (searchSuspended.current)
@@ -363,7 +519,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     ) : null
   const feedbackProps = {
     query: storesQuery,
-    entries,
+    entries: allEntries,
     placesStatus: places.status,
     searchPaused: zoomPaused,
     searchSuspended: suspended,
@@ -392,95 +548,210 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
     </>
   )
 
+  const areaLabel = placesConfig.autoSearch
+    ? '地図の表示範囲・中心から近い順'
+    : area === 'location'
+      ? '現在地から半径3km・近い順'
+      : area === 'destination' && destination
+        ? `${destination.label}から半径3km・近い順`
+        : area === 'map'
+          ? '検索した地点から半径3km・近い順'
+          : '東京駅から半径3km・近い順'
+  const selectedContent =
+    pointContent ??
+    (selectedStore && (
+      <SelectedStoreDetails
+        store={selectedStore}
+        onEdit={onEdit}
+        editLabel={editLabel}
+        editDisabled={preparingRequest}
+      />
+    ))
+  const resultPanel = (
+    <StorePanel
+      {...feedbackProps}
+      entries={entries}
+      unfilteredEntries={allEntries}
+      hasFilters={hasFilters}
+      searchCenter={searchCenter}
+      onClearFilters={clearFilters}
+      areaLabel={areaLabel}
+      onSelectPlace={selectPlace}
+      onRefresh={() => void refreshRegistration()}
+      registrationFetching={links.isFetching}
+      selectedStore={selectedStore}
+      onSelectStore={selectStore}
+      onEdit={onEdit}
+      editLabel={editLabel}
+      editDisabled={preparingRequest}
+      pointContent={pointContent}
+    />
+  )
+
   return (
     <div className="flex h-svh min-h-[480px] flex-col bg-background text-foreground">
-      <AppHeader />
+      <h1 className="sr-only">コンビニトイレマップ</h1>
 
-      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {!isMobile && (
-          <aside
-            aria-label="店舗と選択した場所の情報"
-            className="hidden min-h-0 w-96 shrink-0 border-r bg-background lg:block"
-          >
-            <ScrollArea viewportRef={panelRef} className="h-full">
-              <div className="p-7">
-                {notices}
-                <StorePanel
-                  {...feedbackProps}
-                  areaLabel={
-                    placesConfig.autoSearch
-                      ? '地図の表示範囲・中心から近い順'
-                      : area === 'location'
-                        ? '現在地から半径3km・近い順'
-                        : area === 'map'
-                          ? '検索した地点から半径3km・近い順'
-                          : '東京駅から半径3km・近い順'
-                  }
-                  onSelectPlace={selectPlace}
-                  onRefresh={() => void refreshRegistration()}
-                  registrationFetching={links.isFetching}
-                  selectedStore={selectedStore}
-                  onSelectStore={selectStore}
-                  onBack={clearSelection}
-                  onEdit={onEdit}
-                  editLabel={editLabel}
-                  editDisabled={preparingRequest}
-                  pointContent={pointContent}
-                />
-              </div>
-            </ScrollArea>
-          </aside>
-        )}
-
+      <main className="relative min-h-0 flex-1">
         <section
           aria-label="地図"
-          className="relative isolate min-h-[240px] flex-1 overflow-hidden bg-muted"
+          className="absolute inset-0 isolate overflow-hidden bg-muted"
         >
-          {config.apiKey ? (
-            <APIProvider
-              apiKey={config.apiKey}
-              libraries={libraries}
-              language="ja"
-              region="JP"
-              version="quarterly"
-              onError={() => {
-                // エラー本文やリクエストURLにキーが含まれる可能性があるため出力しない。
+          <div
+            role="group"
+            aria-label="マップのアプリ操作"
+            className={`absolute ${placesConfig.autoSearch ? 'top-[72px]' : 'top-[128px]'} right-3 z-10 lg:top-4 lg:right-4 lg:z-30`}
+          >
+            <AppHeaderActions />
+          </div>
+          <div
+            ref={floatingSearchRef}
+            className={`pointer-events-auto absolute top-3 left-1/2 ${searchExpanded || filterOpen ? 'z-40' : 'z-20'} w-[calc(100%-24px)] max-w-md -translate-x-1/2 lg:top-4 lg:left-4 lg:w-96 lg:max-w-none lg:translate-x-0`}
+            aria-label="場所検索と絞り込み"
+          >
+            <DestinationSearch
+              center={searchCenter}
+              disabled={!mapControls.ready}
+              closeSignal={searchCloseSignal}
+              filterOpen={filterOpen}
+              filterCount={activeFilterCount(filters)}
+              onSelect={chooseDestination}
+              onOpenChange={(open) => {
+                setSearchExpanded(open)
+              }}
+              controls={
+                <FilterControls
+                  filters={filters}
+                  entries={allEntries}
+                  onChange={setFilters}
+                  onOpenChange={(open) => {
+                    setFilterOpen(open)
+                  }}
+                />
+              }
+            >
+              {!isMobile && (
+                <aside
+                  aria-label="店舗と選択した場所の情報"
+                  className="flex min-h-0 flex-1 flex-col border-t"
+                >
+                  <ScrollArea
+                    viewportRef={panelRef}
+                    className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:max-h-[calc(var(--search-available-height,70dvh)-112px)]"
+                  >
+                    <div className="px-7 pb-7 pt-0">
+                      {notices}
+                      {resultPanel}
+                    </div>
+                  </ScrollArea>
+                </aside>
+              )}
+            </DestinationSearch>
+          </div>
+          <TooltipProvider delayDuration={300}>
+            <div
+              role="group"
+              aria-label="地図の表示操作"
+              className="absolute right-4 z-20 flex flex-col gap-3"
+              style={{
+                bottom:
+                  isMobile && (mobileListOpen || selection)
+                    ? `${sheetHeight + 12}px`
+                    : 'calc(32px + env(safe-area-inset-bottom))',
               }}
             >
-              <MapCanvas
-                onLocated={located}
-                onLocationFallback={fallback}
-                onSearchArea={searchMap}
-                onViewportSearch={searchViewport}
-                onSuspendSearch={suspendSearch}
-                placesConfig={placesConfig}
-                searching={places.status === 'loading'}
-                entries={entries}
-                selectedPlace={selectedEntry}
-                onPlaceSelect={selectPlace}
-                mapId={config.mapId}
-                stores={stores}
-                selectedStore={selectedStore}
-                onStoreSelect={selectStore}
-                adminLogin={
-                  config.adminLoginArea && admin.status !== 'admin'
-                    ? {
-                        ...config.adminLoginArea,
-                        open: () => void navigate({ to: '/admin-login' }),
-                      }
-                    : undefined
-                }
-              />
-            </APIProvider>
+              {isMobile && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-12 rounded-full bg-background shadow-md"
+                      aria-label={`店舗一覧を表示（${entries.length}件）`}
+                      aria-pressed={mobileListOpen && !selection}
+                      onClick={() => {
+                        restoreListFocus.current = Boolean(
+                          selection && listReturnLabel.current,
+                        )
+                        clearSelection()
+                        setMobileListOpen(true)
+                        setSearchCloseSignal((value) => value + 1)
+                      }}
+                    >
+                      <List className="size-5" aria-hidden="true" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">店舗一覧</TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-12 rounded-full bg-background shadow-md"
+                      disabled={!mapControls.ready || mapControls.locating}
+                      aria-label="現在地に移動"
+                      aria-busy={mapControls.locating}
+                      onClick={() => {
+                        closeResultPanel()
+                        setSearchCloseSignal((value) => value + 1)
+                        setLocationRequest((value) => value + 1)
+                      }}
+                    >
+                      {mapControls.locating ? (
+                        <Spinner aria-hidden="true" />
+                      ) : (
+                        <LocateFixed className="size-5" aria-hidden="true" />
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="left">現在地</TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
+          {config.apiKey ? (
+            <MapCanvas
+              isMobile={isMobile}
+              hideSearchAction={searchExpanded || filterOpen}
+              destination={destination}
+              locationRequest={locationRequest}
+              onControlsChange={setMapControls}
+              onLocated={located}
+              onLocationFallback={fallback}
+              onSearchArea={searchMap}
+              onViewportSearch={searchViewport}
+              onSuspendSearch={suspendSearch}
+              placesConfig={placesConfig}
+              searching={places.status === 'loading'}
+              entries={entries}
+              selectedPlace={selectedEntry}
+              onPlaceSelect={selectPlace}
+              mapId={config.mapId}
+              stores={stores}
+              selectedStore={selectedStore}
+              onStoreSelect={selectStore}
+              onClearSelection={closeResultPanel}
+              adminLogin={
+                config.adminLoginArea && admin.status !== 'admin'
+                  ? {
+                      ...config.adminLoginArea,
+                      open: () => void navigate({ to: '/admin-login' }),
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <MapNotice
               title="地図の設定が必要です"
               description=".envにVITE_GOOGLE_MAPS_API_KEYを設定し、開発サーバーを再起動してください。"
             />
           )}
-          {isMobile && (
+          {isMobile && !mobileListOpen && !searchExpanded && !filterOpen && (
             <div
-              className={`absolute right-32 left-3 z-10 grid max-h-[20svh] max-w-xs gap-2 overflow-y-auto overscroll-contain rounded-lg border bg-background/95 p-2 shadow-sm empty:hidden [&>*]:m-0 [&>p]:py-0 ${placesConfig.autoSearch ? 'top-4' : 'top-32'}`}
+              className={`absolute right-3 left-3 z-10 grid max-h-[20svh] max-w-xs gap-2 overflow-y-auto overscroll-contain rounded-lg border bg-background/95 p-2 shadow-sm empty:hidden [&>*]:m-0 [&>p]:py-0 ${placesConfig.autoSearch ? 'top-[132px]' : 'top-[196px]'}`}
             >
               {notices}
               <StorePanelFeedback {...feedbackProps} />
@@ -496,7 +767,7 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
                   }
                   onClick={() => void refreshRegistration()}
                 >
-                  店舗情報を更新
+                  店舗情報を再取得
                 </Button>
               )}
             </div>
@@ -506,19 +777,24 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
       {isMobile && (
         <Sheet
           modal={false}
-          open={Boolean(selectedStore || pointContent)}
+          open={mobileListOpen || Boolean(selectedStore || pointContent)}
           onOpenChange={(open) => {
-            if (!open) clearSelection()
+            if (!open) closeResultPanel()
           }}
         >
           <SheetContent
-            className="max-h-[42dvh] pb-[env(safe-area-inset-bottom)]"
+            ref={setSheetElement}
+            className={`${selection ? 'max-h-[42dvh]' : 'max-h-[65dvh]'} pb-[env(safe-area-inset-bottom)]`}
             aria-describedby={undefined}
             onInteractOutside={(event) => event.preventDefault()}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               const active = document.activeElement
               sheetTrigger.current =
                 active instanceof HTMLElement ? active : null
+              if (selection) {
+                event.preventDefault()
+                mobileScrollRef.current?.focus({ preventScroll: true })
+              }
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault()
@@ -530,22 +806,29 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
                 trigger.focus({ preventScroll: true })
             }}
           >
-            <SheetTitle className="shrink-0 border-b px-5 py-4 pr-14 text-sm font-semibold">
-              トイレ情報
+            <SheetTitle className="sr-only">
+              {selection ? 'トイレ情報' : `周辺店舗一覧（${entries.length}件）`}
             </SheetTitle>
             <div
+              ref={mobileScrollRef}
+              tabIndex={selection ? -1 : undefined}
+              role={selection ? 'region' : undefined}
+              aria-label={selection ? '選択した店舗の情報' : undefined}
               key={selection && `${selection.kind}:${selection.id}`}
-              className="min-h-0 overflow-y-auto overscroll-contain p-5"
+              className={`min-h-0 overflow-y-auto overscroll-contain px-5 pb-5 ${selection ? 'pt-5' : 'pt-0'}`}
+              onScroll={(event) => {
+                if (!selection)
+                  listScrollTop.current = event.currentTarget.scrollTop
+              }}
             >
-              {pointContent ??
-                (selectedStore && (
-                  <SelectedStoreDetails
-                    store={selectedStore}
-                    onEdit={onEdit}
-                    editLabel={editLabel}
-                    editDisabled={preparingRequest}
-                  />
-                ))}
+              {!selection ? (
+                <>
+                  {notices}
+                  {resultPanel}
+                </>
+              ) : (
+                selectedContent
+              )}
             </div>
           </SheetContent>
         </Sheet>
@@ -566,6 +849,11 @@ export function MapPage({ config = configFromEnv }: { config?: MapConfig }) {
 }
 
 function MapCanvas({
+  hideSearchAction,
+  isMobile,
+  destination,
+  locationRequest,
+  onControlsChange,
   onLocated,
   onLocationFallback,
   onSearchArea,
@@ -580,8 +868,14 @@ function MapCanvas({
   stores,
   selectedStore,
   onStoreSelect,
+  onClearSelection,
   adminLogin,
 }: {
+  isMobile: boolean
+  hideSearchAction: boolean
+  destination: (SearchDestination & { requestId: number }) | null
+  locationRequest: number
+  onControlsChange: (controls: { ready: boolean; locating: boolean }) => void
   onLocated: (point: MapPoint) => void
   onLocationFallback: () => void
   onSearchArea: (point: MapPoint) => void
@@ -596,6 +890,7 @@ function MapCanvas({
   stores: Store[]
   selectedStore: Store | null
   onStoreSelect: (id: string) => void
+  onClearSelection: () => void
   adminLogin?: AdminLoginArea & { open: () => void }
 }) {
   const { resolvedTheme } = useTheme()
@@ -622,10 +917,16 @@ function MapCanvas({
   const [locationError, setLocationError] = useState<string | null>(null)
   const mounted = useRef(false)
   const initialLocationRequested = useRef(false)
+  const locationIntent = useRef(0)
+  const handledDestination = useRef<number | null>(null)
+  const handledLocationRequest = useRef(0)
 
   const authFailure = status === APILoadingStatus.AUTH_FAILURE
   const failed = authFailure || status === APILoadingStatus.FAILED
   const ready = status === APILoadingStatus.LOADED && tilesReady && !failed
+  useEffect(() => {
+    onControlsChange({ ready, locating })
+  }, [ready, locating, onControlsChange])
   const focusId = selectedStore?.id ?? selectedPlace?.key
   const focusLat = selectedStore?.location.lat ?? selectedPlace?.location.lat
   const focusLng = selectedStore?.location.lng ?? selectedPlace?.location.lng
@@ -633,12 +934,12 @@ function MapCanvas({
   const locatingRef = useRef(false)
   const [mapCenter, setMapCenter] = useState(INITIAL_CENTER)
   const searchGuard = useRef(false)
-  const adminLoginClickAt = useRef<number | null>(null)
+  const adminLoginClicks = useRef<{ at: number; count: number } | null>(null)
   const adminLoginOpening = useRef(false)
 
   function handleAdminLoginClick(event: MapMouseEvent, doubleClick = false) {
-    const previousClick = adminLoginClickAt.current
-    adminLoginClickAt.current = null
+    const previousClicks = adminLoginClicks.current
+    adminLoginClicks.current = null
     const point = event.detail.latLng
     if (
       !adminLogin ||
@@ -649,16 +950,17 @@ function MapCanvas({
       return
 
     const now = performance.now()
-    if (
-      doubleClick ||
-      (previousClick !== null &&
-        now - previousClick <= adminLoginClickIntervalMs)
-    ) {
+    const count =
+      previousClicks && now - previousClicks.at <= adminLoginClickIntervalMs
+        ? previousClicks.count + 1
+        : 1
+    // スマホのダブルタップはSDKの拡大操作に譲り、ログインは3回タップにする。
+    if (doubleClick || count >= (isMobile ? 3 : 2)) {
       adminLoginOpening.current = true
       event.stop()
       adminLogin.open()
     } else {
-      adminLoginClickAt.current = now
+      adminLoginClicks.current = { at: now, count }
     }
   }
 
@@ -671,6 +973,44 @@ function MapCanvas({
     onSuspend: onSuspendSearch,
   })
   const suppressPan = viewportSearch.suppressPan
+  const preparePan = viewportSearch.preparePan
+  const onViewportIdle = viewportSearch.onIdle
+  useEffect(() => {
+    if (
+      !map ||
+      !ready ||
+      !destination ||
+      handledDestination.current === destination.requestId
+    )
+      return
+    handledDestination.current = destination.requestId
+    // 遅れて返る初回位置情報は、利用者が選んだ目的地を上書きしない。
+    locationIntent.current += 1
+    locatingRef.current = false
+    initialSearchDone.current = true
+    initialLocationRequested.current = true
+    setLocating(false)
+    setLocationResolved(true)
+    setLocationError(null)
+    preparePan()
+    const zoom = Math.max(15, placesConfig.minZoom ?? 13)
+    const currentCenter = map.getCenter()?.toJSON()
+    const unchanged =
+      currentCenter &&
+      pointDistance(currentCenter, destination.location) < 0.01 &&
+      map.getZoom() === zoom
+    map.panTo(destination.location)
+    map.setZoom(zoom)
+    // 同じ地点・ズームの再選択ではSDKがidleを発行しない場合がある。
+    if (unchanged) onViewportIdle()
+  }, [
+    map,
+    ready,
+    destination,
+    preparePan,
+    onViewportIdle,
+    placesConfig.minZoom,
+  ])
   const fallbackIfNeeded = useCallback(() => {
     if (!initialSearchDone.current) {
       initialSearchDone.current = true
@@ -722,23 +1062,30 @@ function MapCanvas({
     }
     locatingRef.current = true
     setLocating(true)
+    const intent = ++locationIntent.current
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         if (!mounted.current) return
         const point = { lat: coords.latitude, lng: coords.longitude }
+        if (intent !== locationIntent.current) return
         setLocation(point)
         initialSearchDone.current = true
         setLocationResolved(true)
+        preparePan()
         onLocated(point)
         locatingRef.current = false
         setLocating(false)
         currentMap.current?.panTo(point)
         currentMap.current?.setZoom(
-          Math.max(currentMap.current.getZoom() ?? 15, 15),
+          Math.max(
+            currentMap.current.getZoom() ?? 15,
+            15,
+            placesConfig.minZoom ?? 13,
+          ),
         )
       },
       (error) => {
-        if (!mounted.current) return
+        if (!mounted.current || intent !== locationIntent.current) return
         locatingRef.current = false
         setLocating(false)
         setLocationError(locationErrorMessage(error.code))
@@ -746,7 +1093,20 @@ function MapCanvas({
       },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     )
-  }, [map, ready, onLocated, fallbackIfNeeded])
+  }, [
+    map,
+    ready,
+    onLocated,
+    fallbackIfNeeded,
+    preparePan,
+    placesConfig.minZoom,
+  ])
+
+  useEffect(() => {
+    if (locationRequest === handledLocationRequest.current || !ready) return
+    handledLocationRequest.current = locationRequest
+    locate()
+  }, [locationRequest, ready, locate])
 
   useEffect(() => {
     if (!map || !ready || initialLocationRequested.current) return
@@ -782,18 +1142,36 @@ function MapCanvas({
           setCamera({ center, zoom, heading, tilt })
           viewportSearch.onChange({ center, zoom, bounds })
         }}
-        onClick={adminLogin ? handleAdminLoginClick : undefined}
-        // click の発火順に関わらず、dblclick 自体も判定する。
+        onClick={(event) => {
+          onClearSelection()
+          if (adminLogin) handleAdminLoginClick(event)
+        }}
+        // PCではclickの発火順に関わらず、dblclick自体も判定する。
         onDblclick={
-          adminLogin ? (event) => handleAdminLoginClick(event, true) : undefined
+          adminLogin && !isMobile
+            ? (event) => handleAdminLoginClick(event, true)
+            : undefined
         }
         onDragstart={() => {
-          adminLoginClickAt.current = null
+          adminLoginClicks.current = null
+          // 地図の手動操作も、進行中の初回現在地取得より優先する。
+          locationIntent.current += 1
+          if (locatingRef.current) {
+            locatingRef.current = false
+            initialSearchDone.current = true
+            setLocating(false)
+            setLocationResolved(true)
+          }
           viewportSearch.onDragStart()
         }}
         reuseMaps
         clickableIcons={false}
         gestureHandling="greedy"
+        draggableCursor="default"
+        isFractionalZoomEnabled
+        disableDoubleClickZoom={false}
+        disableDefaultUI
+        cameraControl={false}
         mapTypeControl={false}
         streetViewControl={false}
         fullscreenControl={false}
@@ -850,10 +1228,10 @@ function MapCanvas({
         </div>
       )}
 
-      {!placesConfig.autoSearch && (
+      {!placesConfig.autoSearch && !hideSearchAction && (
         <Button
           variant="outline"
-          className="absolute top-4 left-1/2 h-11 -translate-x-1/2 rounded-xl bg-background shadow-sm sm:top-5"
+          className="absolute top-[72px] left-1/2 z-10 h-8 -translate-x-1/2 rounded-xl bg-background shadow-sm lg:top-4"
           disabled={!ready || locating || searching}
           onClick={() => {
             if (searchGuard.current) return
@@ -867,29 +1245,6 @@ function MapCanvas({
           {searching ? 'コンビニを検索中' : 'この周辺を検索'}
         </Button>
       )}
-      <div
-        className={`absolute right-4 sm:top-5 sm:right-5 ${placesConfig.autoSearch ? 'top-4' : 'top-18'}`}
-      >
-        <Button
-          variant="outline"
-          size="lg"
-          className="h-11 gap-2 rounded-xl bg-background px-4 shadow-sm hover:bg-muted"
-          onClick={locate}
-          disabled={!ready || locating}
-          aria-label="現在地に移動"
-          aria-busy={locating}
-        >
-          {locating ? (
-            <Spinner
-              className="animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          ) : (
-            <LocateFixed aria-hidden="true" />
-          )}
-          {locating ? '現在地を取得中' : '現在地'}
-        </Button>
-      </div>
       {locationError && (
         <Alert className="map-panel-enter absolute right-4 bottom-24 left-4 w-auto max-w-md p-4 shadow-sm sm:bottom-20">
           <CircleAlert aria-hidden="true" />

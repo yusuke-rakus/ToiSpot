@@ -126,10 +126,16 @@ export function useViewportSearch({
     },
     [enabled, clearTimer],
   )
+  // 目的地への移動は詳細表示の移動と異なり、移動先での検索を許可する。
+  const preparePan = useCallback(() => {
+    clearTimer()
+    suppressed.current = null
+    lastRequested.current = null
+  }, [clearTimer])
   const onDragStart = useCallback(() => {
     suppressed.current = null
     const viewport = readViewport()
     if (viewport) onChange(viewport)
   }, [readViewport, onChange])
-  return { onChange, onIdle, searchNow, suppressPan, onDragStart }
+  return { onChange, onIdle, searchNow, suppressPan, preparePan, onDragStart }
 }
