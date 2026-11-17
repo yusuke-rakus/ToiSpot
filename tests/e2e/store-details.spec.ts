@@ -71,19 +71,20 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
           body: `export const AdminProvider = ({children}) => children; export const useAdmin = () => ({ status: 'admin', busy: false, message: null, logout: async () => {} });`,
         }),
     )
-    await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
-      const response = await route.fetch({
-        url: 'http://127.0.0.1:4173/tests/e2e/fixtures/maps-stub.tsx',
-      })
-      await route.fulfill({ response, contentType: 'application/javascript' })
-    })
-    await page.route('**/src/features/map/map-config.ts', (route) =>
-      route.fulfill({
-        contentType: 'application/javascript',
-        body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
-      }),
-    )
   }
+  await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
+    const response = await route.fetch({
+      url: new URL('/tests/e2e/fixtures/maps-stub.tsx', route.request().url())
+        .href,
+    })
+    await route.fulfill({ response, contentType: 'application/javascript' })
+  })
+  await page.route('**/src/features/map/map-config.ts', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
+    }),
+  )
   const positionedStores = stores.map((store, index) => ({
     ...store,
     location: { lat: 35.684, lng: 139.739 + index * 0.014 },
@@ -160,11 +161,15 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
           animations: 'disabled',
         })
       }
-      await panel
-        .getByRole('button', {
-          name: mobile ? 'トイレ情報を閉じる' : '一覧へ戻る',
+      if (mobile)
+        await panel.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
+      else {
+        const map = page.getByLabel('周辺の地図', { exact: true })
+        const bounds = (await map.boundingBox())!
+        await map.click({
+          position: { x: bounds.width - 80, y: bounds.height / 2 },
         })
-        .click()
+      }
     }
   }
   if (mobile) {
@@ -181,6 +186,29 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
     await expect(editor).toHaveCount(0)
     await expect(editButton).toBeFocused()
     await expect(panel).toBeVisible()
+    const pin = page.getByRole('button', {
+      name: '設備のあるコンビニ・利用可',
+    })
+    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'true')
+    const map = page.getByLabel('周辺の地図', { exact: true })
+    await expect(map).toHaveCSS('cursor', 'default')
+    const blankPoint = await map.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      for (const y of [180, 340, 420])
+        for (const x of [bounds.width - 20, 20, bounds.width / 2])
+          if (
+            document.elementFromPoint(bounds.left + x, bounds.top + y) ===
+            element
+          )
+            return { x, y }
+      throw new Error('操作パネルに覆われていない地図の余白がありません')
+    })
+    await map.tap({ position: blankPoint })
+    await expect(panel).toHaveCount(0)
+    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'false')
+    await pin.tap()
+    await expect(panel).toBeVisible()
+    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'true')
   }
   expect(externalRequests).toEqual([])
 })

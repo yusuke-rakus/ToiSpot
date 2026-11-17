@@ -8,6 +8,9 @@ export const APILoadingStatus = {
 }
 export const useApiLoadingStatus = () => 'LOADED'
 let center = { lat: 35.681236, lng: 139.767125 }
+// この境界は実SDKの投影を再現しない。近隣での選択移動は配置を保ち、
+// 地域検索で遠方へ移ったときだけ、表示用の原点を移す。
+let markerOrigin = center
 let mapZoom = 15
 let notifyCamera: (() => void) | null = null
 function bounds() {
@@ -21,6 +24,11 @@ function bounds() {
 }
 const map = {
   panTo: (point: typeof center) => {
+    if (
+      Math.abs(point.lat - markerOrigin.lat) > 0.1 ||
+      Math.abs(point.lng - markerOrigin.lng) > 0.1
+    )
+      markerOrigin = point
     center = point
     queueMicrotask(() => notifyCamera?.())
   },
@@ -44,6 +52,8 @@ export function Map({
   zoom,
   onCameraChanged,
   onDragstart,
+  onClick,
+  draggableCursor,
 }: {
   children: ReactNode
   onTilesLoaded: (event: { map: typeof map }) => void
@@ -62,6 +72,11 @@ export function Map({
     }
   }) => void
   onDragstart?: () => void
+  onClick?: (event: {
+    detail: { latLng: typeof center }
+    stop: () => void
+  }) => void
+  draggableCursor?: CSSProperties['cursor']
 }) {
   useEffect(() => {
     const notify = () => {
@@ -90,9 +105,15 @@ export function Map({
       data-color-scheme={colorScheme}
       data-center={JSON.stringify(cameraCenter)}
       data-zoom={zoom}
+      onClick={(event) => {
+        // SDKの地図クリックはピンのクリックでは発火しない。
+        if (event.target === event.currentTarget)
+          onClick?.({ detail: { latLng: center }, stop: () => {} })
+      }}
       style={{
         ...style,
         position: 'relative',
+        cursor: draggableCursor,
         backgroundColor: colorScheme === 'DARK' ? '#202a25' : '#e8eee8',
         backgroundImage: `linear-gradient(25deg, transparent 44%, ${colorScheme === 'DARK' ? '#3a4941' : '#fff'} 45%, ${colorScheme === 'DARK' ? '#3a4941' : '#fff'} 48%, transparent 49%),linear-gradient(90deg, transparent 45%, ${colorScheme === 'DARK' ? '#3a4941' : '#fff'} 46%, ${colorScheme === 'DARK' ? '#3a4941' : '#fff'} 49%, transparent 50%)`,
         backgroundSize: '130px 150px',
@@ -102,7 +123,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          top: 128,
+          top: 208,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',
@@ -121,7 +142,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          top: 168,
+          top: 248,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',
@@ -138,7 +159,7 @@ export function Map({
       <button
         style={{
           position: 'absolute',
-          top: 208,
+          top: 288,
           right: 12,
           background: 'var(--background)',
           color: 'var(--foreground)',
@@ -173,8 +194,8 @@ export function AdvancedMarker({
 }) {
   const style: CSSProperties = {
     position: 'absolute',
-    left: `${50 + (position.lng - 139.767125) * 1000}%`,
-    top: `${50 - (position.lat - 35.681236) * 1800}%`,
+    left: `${50 + (position.lng - markerOrigin.lng) * 1000}%`,
+    top: `${50 - (position.lat - markerOrigin.lat) * 1800}%`,
     transform: 'translate(-50%, -100%)',
     zIndex,
   }

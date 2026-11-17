@@ -68,9 +68,7 @@ test('OS連動・手動切替・再読込・別タブ同期を利用できる', 
   }
 })
 
-test('管理者ヘッダーでもテーマとログアウトを操作できる', async ({
-  page,
-}, testInfo) => {
+test('地図右上でテーマと管理者操作を利用できる', async ({ page }, testInfo) => {
   await page.route(
     /\/src\/features\/auth\/admin-provider\.tsx(?:\?.*)?$/,
     (route) =>
@@ -84,13 +82,13 @@ test('管理者ヘッダーでもテーマとログアウトを操作できる',
   await page.getByRole('button', { name: /テーマを変更/ }).click()
   await page.getByRole('menuitemradio', { name: 'ダーク' }).click()
   await expect(page.locator('html')).toHaveClass('dark')
-  const header = page.locator('header')
+  const header = page.getByRole('group', { name: 'マップのアプリ操作' })
   const bounds = await header.boundingBox()
   const logoutBounds = await page
     .getByRole('button', { name: 'ログアウト' })
     .boundingBox()
   expect(logoutBounds!.x + logoutBounds!.width).toBeLessThanOrEqual(
-    bounds!.width,
+    bounds!.x + bounds!.width,
   )
   expect(
     await page.evaluate(

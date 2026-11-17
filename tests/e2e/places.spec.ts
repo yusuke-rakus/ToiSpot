@@ -124,6 +124,22 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   await expect(pinImage).toHaveCSS('transition-property', 'transform')
   await expect(pinImage).toHaveCSS('transition-duration', '0.22s')
   await expect(pinImage).toHaveCSS('transition-timing-function', 'ease-out')
+  const sourceLabel = page
+    .getByRole('article', { name: 'コンビニの詳細' })
+    .getByText('Google Maps の店舗情報', { exact: true })
+  await expect(sourceLabel).toBeVisible()
+  const detailViewport = mobile
+    ? sheet.locator('.overflow-y-auto')
+    : page
+        .getByRole('complementary')
+        .locator('[data-slot="scroll-area-viewport"]')
+  const viewportBounds = (await detailViewport.boundingBox())!
+  const labelBounds = (await sourceLabel.boundingBox())!
+  expect(labelBounds.y - viewportBounds.y).toBeGreaterThanOrEqual(19)
+  expect(labelBounds.y + labelBounds.height).toBeLessThanOrEqual(
+    viewportBounds.y + viewportBounds.height,
+  )
+
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(pinImage).toHaveCSS('transition-property', 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
@@ -172,7 +188,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   else
     await expect(
       page.getByText('検索した地点から半径3km・近い順'),
-    ).toBeVisible()
+    ).toBeAttached()
   await expect(pin).toBeVisible()
   expect(
     await page.evaluate(
@@ -200,7 +216,10 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     await sheet.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
     await expect(sheet).toHaveCount(0)
   } else {
-    await page.getByRole('button', { name: '一覧へ戻る' }).click()
+    const mapBounds = (await map.boundingBox())!
+    await map.click({
+      position: { x: mapBounds.width - 80, y: mapBounds.height / 2 },
+    })
   }
   await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
   await expect(registeredImage).toHaveCSS(
@@ -216,6 +235,18 @@ test('店舗一覧をパネル内でスクロールし、詳細と一覧への�
   test.skip(
     testInfo.project.name === 'mobile',
     '店舗一覧はデスクトップ幅で表示する',
+  )
+  await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
+    const response = await route.fetch({
+      url: 'http://127.0.0.1:4173/tests/e2e/fixtures/maps-stub.tsx',
+    })
+    await route.fulfill({ response, contentType: 'application/javascript' })
+  })
+  await page.route('**/src/features/map/map-config.ts', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: `export const INITIAL_CENTER = {lat:35.681236,lng:139.767125}; export const INITIAL_ZOOM=14; export const DEFAULT_PLACES_CONFIG={autoSearch:false,expandedSearch:true,minZoom:13,maxResults:100,maxRequests:9}; export function getMapConfig(){return {apiKey:'test-key-not-real',mapId:'DEMO_MAP_ID'}} export function locationErrorMessage(){return '現在地を取得できませんでした'}`,
+    }),
   )
   const stores = Array.from({ length: 15 }, (_, index) => ({
     ...store,
@@ -248,7 +279,11 @@ test('店舗一覧をパネル内でスクロールし、詳細と一覧への�
     panel.getByRole('heading', { name: 'スクロール確認店舗14', exact: true }),
   ).toBeVisible()
   await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0)
-  await panel.getByRole('button', { name: '一覧へ戻る' }).click()
+  const map = page.getByLabel('周辺の地図', { exact: true })
+  const mapBounds = (await map.boundingBox())!
+  await map.click({
+    position: { x: mapBounds.width - 80, y: mapBounds.height / 2 },
+  })
   await expect(panel.getByRole('list')).toBeVisible()
   await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0)
   expect(

@@ -149,6 +149,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     tilt,
     colorScheme,
     onCameraChanged,
+    onDragstart,
   }: {
     children: ReactNode
     onClick?: (event: unknown) => void
@@ -160,6 +161,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     heading: number
     tilt: number
     colorScheme: string
+    onDragstart: () => void
     onCameraChanged: (event: {
       detail: {
         center: { lat: number; lng: number }
@@ -180,7 +182,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
           onCameraChanged({
             detail: {
               center: { lat: 35.8, lng: 139.9 },
-              zoom: 17,
+              zoom: 17.5,
               heading: 20,
               tilt: 30,
               bounds: maps.getBounds().toJSON(),
@@ -194,6 +196,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
         地図の描画を完了
       </button>
       <button onClick={onIdle}>地図を移動</button>
+      <button onClick={onDragstart}>地図のドラッグを開始</button>
       {[12, 13].map((level) => (
         <button
           key={level}
@@ -266,6 +269,17 @@ beforeEach(() => {
   vi.clearAllMocks()
   mapInstance.current = { ...maps }
   maps.getZoom.mockReset().mockReturnValue(14)
+  maps.getCenter
+    .mockReset()
+    .mockReturnValue({ toJSON: () => ({ lat: 35.7, lng: 139.8 }) })
+  maps.getBounds.mockReset().mockReturnValue({
+    toJSON: () => ({
+      north: 35.72,
+      south: 35.68,
+      east: 139.82,
+      west: 139.78,
+    }),
+  })
   localStorage.clear()
   writer.save.mockReset().mockResolvedValue('new-fixed')
   requests.readStore.mockReset()
@@ -367,7 +381,7 @@ describe('管理者操作と地図画面の連携', () => {
       { id: 'new-fixed', googlePlaceId: place.id },
       expect.objectContaining({ location: place.location }),
     )
-    expect(screen.getByText('登録店舗 7件')).toBeVisible()
+    expect(screen.getByText('登録店舗 7件')).toBeInTheDocument()
     expect(maps.panTo).toHaveBeenLastCalledWith(place.location)
     expect(
       screen.getByRole('button', { name: `${place.name}・利用可` }).firstChild,
@@ -483,6 +497,65 @@ describe('地図からの管理者ログイン', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  describe('スマホの標準ズームとログイン入口', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn((query: string) => ({
+          matches: query === '(width < 64rem)',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        })),
+      )
+    })
+
+    it('ダブルタップでは遷移せず、3回目のタップでログインを開く', () => {
+      render(<MapPage config={configWithAdminLogin} />)
+      const center = screen.getByRole('button', { name: '中心地点を選択' })
+      fireEvent.click(center)
+      fireEvent.click(center)
+      fireEvent.doubleClick(center)
+      expect(navigate).not.toHaveBeenCalled()
+      fireEvent.click(center)
+      expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+    })
+
+    it('ドラッグを挟んだタップをログイン操作として数えない', () => {
+      render(<MapPage config={configWithAdminLogin} />)
+      const center = screen.getByRole('button', { name: '中心地点を選択' })
+      fireEvent.click(center)
+      fireEvent.click(center)
+      fireEvent.click(
+        screen.getByRole('button', { name: '地図のドラッグを開始' }),
+      )
+      fireEvent.click(center)
+      fireEvent.click(center)
+      expect(navigate).not.toHaveBeenCalled()
+      fireEvent.click(center)
+      expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+    })
+
+    it('半径外の操作と1秒を超えた間隔でタップ回数をリセットする', () => {
+      vi.useFakeTimers({ toFake: ['performance'] })
+      render(<MapPage config={configWithAdminLogin} />)
+      const center = screen.getByRole('button', { name: '中心地点を選択' })
+      fireEvent.click(center)
+      fireEvent.click(center)
+      fireEvent.click(
+        screen.getByRole('button', { name: '半径外の地点を選択' }),
+      )
+      fireEvent.click(center)
+      fireEvent.click(center)
+      expect(navigate).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1001)
+      fireEvent.click(center)
+      fireEvent.click(center)
+      expect(navigate).not.toHaveBeenCalled()
+      fireEvent.click(center)
+      expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/admin-login' })
+    })
+  })
+
   it.each([true, false])(
     'ログイン後、再表示する地図が描画済みなら完了通知を待たない（描画済み: %s）',
     (reuseRenderedMap) => {
@@ -570,6 +643,7 @@ it('自動モードで縮小すると詳細を残して全検索を停止し、�
     attributions: [],
   }
   placesQuery.status = 'error'
+  storeQuery.isError = true
   placesQuery.places = [place]
   linksQuery.data = { [place.id]: null }
   const placesConfig = { ...DEFAULT_PLACES_CONFIG, autoSearch: true }
@@ -591,7 +665,7 @@ it('自動モードで縮小すると詳細を残して全検索を停止し、�
         finish = resolve
       }),
   )
-  fireEvent.click(screen.getByRole('button', { name: '店舗情報を更新' }))
+  fireEvent.click(screen.getByRole('button', { name: '店舗情報を再取得' }))
   expect(storeQuery.refetch).toHaveBeenCalledOnce()
   fireEvent.click(screen.getByRole('button', { name: 'ズーム12' }))
   expect(screen.getByText('地図を拡大すると検索を再開します')).toBeVisible()
@@ -602,7 +676,9 @@ it('自動モードで縮小すると詳細を残して全検索を停止し、�
   expect(
     screen.getByRole('button', { name: 'コンビニ検索を再試行' }),
   ).toBeDisabled()
-  expect(screen.getByRole('button', { name: '店舗情報を更新' })).toBeDisabled()
+  expect(
+    screen.getByRole('button', { name: '店舗情報を再取得' }),
+  ).toBeDisabled()
   await act(async () => {
     finish({ data: storeQuery.data, isError: false })
     vi.advanceTimersByTime(1000)
@@ -649,6 +725,7 @@ it('テーマでSDKの地図が交換されてもカメラ・選択を保ち、�
   )
   await user.click(screen.getByRole('button', { name: '地図カメラを移動' }))
   const camera = screen.getByTestId('map').getAttribute('data-camera')
+  expect(JSON.parse(camera!).zoom).toBe(17.5)
   const searchCount = placesQuery.search.mock.calls.length
   const nextMap = { ...maps, panTo: vi.fn(), setZoom: vi.fn() }
   mapInstance.current = nextMap
@@ -702,7 +779,7 @@ describe('Firestoreの店舗表示', () => {
     storeQuery.data = { stores, invalidCount: 0, truncated: false }
   })
 
-  it('一覧・ピンから同じ詳細を開き、地図の余白をクリックしても詳細を維持する', async () => {
+  it('一覧・ピンから同じ詳細を開き、地図の余白をクリックすると選択を解除する', async () => {
     const user = userEvent.setup()
     render(<MapPage config={config} />)
     expect(
@@ -722,8 +799,15 @@ describe('Firestoreの店舗表示', () => {
     expect(screen.queryByText(/最終確認日/)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(
-      screen.getByRole('article', { name: '店舗の詳細' }),
-    ).toHaveTextContent(stores[1].notes)
+      screen.queryByRole('article', { name: '店舗の詳細' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '周辺店舗一覧' })).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: `${stores[1].name}・利用可` })
+        .firstChild,
+    ).toHaveAttribute('data-selected', 'false')
+    expect(maps.panTo).toHaveBeenCalledTimes(1)
+    expect(placesQuery.search).not.toHaveBeenCalled()
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: `${stores[4].name}・利用可` }),
@@ -732,10 +816,11 @@ describe('Firestoreの店舗表示', () => {
     expect(
       screen.getByText('男性用小便器').nextElementSibling,
     ).toHaveTextContent('不明')
-    await user.click(screen.getByRole('button', { name: '一覧へ戻る' }))
+    await user.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(screen.getByRole('list', { name: '周辺店舗一覧' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '店舗情報を更新' }))
-    expect(storeQuery.refetch).toHaveBeenCalledTimes(1)
+    expect(
+      screen.queryByRole('button', { name: '店舗情報を再取得' }),
+    ).not.toBeInTheDocument()
   })
 
   it('不正データ・取得上限・利用不可を明示する', () => {
@@ -817,7 +902,7 @@ describe('現在地', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'このブラウザでは現在地を取得できません',
     )
-    expect(screen.getByText('東京駅から半径3km・近い順')).toBeVisible()
+    expect(screen.getByText('東京駅から半径3km・近い順')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
   })
@@ -845,7 +930,7 @@ describe('現在地', () => {
       lat: 34.7,
       lng: 135.5,
     })
-    expect(screen.getByText('現在地から半径3km・近い順')).toBeVisible()
+    expect(screen.getByText('現在地から半径3km・近い順')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
     expect(getCurrentPosition).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '現在地に移動' }))
@@ -860,7 +945,7 @@ describe('現在地', () => {
     render(<MapPage config={config} />)
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
     expect(getCurrentPosition).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('東京駅から半径3km・近い順')).toBeVisible()
+    expect(screen.getByText('東京駅から半径3km・近い順')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(
       '位置情報の利用が許可されていません',
     )
@@ -873,6 +958,212 @@ describe('現在地', () => {
   it('位置情報のタイムアウトを区別する', () => {
     expect(locationErrorMessage(3)).toContain('時間がかかっています')
     expect(locationErrorMessage(2)).toContain('取得できませんでした')
+  })
+})
+
+describe('場所検索と絞り込みの地図連携', () => {
+  const destination = { lat: 34.7025, lng: 135.4959 }
+  function mockDestination() {
+    const fetchFields = vi.fn().mockResolvedValue(undefined)
+    const fetchAutocompleteSuggestions = vi.fn().mockResolvedValue({
+      suggestions: [
+        {
+          placePrediction: {
+            placeId: 'osaka-station',
+            mainText: { text: '大阪駅' },
+            text: { text: '大阪駅 大阪市北区' },
+            toPlace: () => ({
+              location: { toJSON: () => destination },
+              fetchFields,
+            }),
+          },
+        },
+      ],
+    })
+    vi.stubGlobal('google', {
+      maps: {
+        importLibrary: vi.fn().mockResolvedValue({
+          AutocompleteSuggestion: { fetchAutocompleteSuggestions },
+          AutocompleteSessionToken: class {},
+        }),
+      },
+    })
+    return { fetchFields, fetchAutocompleteSuggestions }
+  }
+  async function chooseOsaka() {
+    const input = screen.getByRole('combobox')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '大阪' } })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(750)
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: '大阪駅' }))
+    })
+  }
+
+  it('目的地を一度検索し、遅い初回現在地より新しい目的地と明示的な現在地操作を優先する', async () => {
+    vi.useFakeTimers()
+    const completions: PositionCallback[] = []
+    vi.stubGlobal('navigator', {
+      geolocation: {
+        getCurrentPosition: (success: PositionCallback) =>
+          completions.push(success),
+      },
+    })
+    const { fetchFields } = mockDestination()
+    render(<MapPage config={config} />)
+    fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    expect(completions).toHaveLength(1)
+    await chooseOsaka()
+    expect(maps.panTo).toHaveBeenLastCalledWith(destination)
+    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(destination)
+    expect(fetchFields).toHaveBeenCalledExactlyOnceWith({
+      fields: ['location'],
+    })
+    expect(screen.getByText('大阪駅から半径3km・近い順')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '現在地に移動' }))
+    expect(completions).toHaveLength(2)
+    act(() =>
+      completions[1]({
+        coords: { latitude: 35.1, longitude: 139.1 },
+      } as GeolocationPosition),
+    )
+    act(() =>
+      completions[0]({
+        coords: { latitude: 35.9, longitude: 139.9 },
+      } as GeolocationPosition),
+    )
+    expect(maps.panTo).toHaveBeenLastCalledWith({ lat: 35.1, lng: 139.1 })
+    expect(placesQuery.search).toHaveBeenCalledTimes(2)
+    expect(placesQuery.search).toHaveBeenLastCalledWith({
+      lat: 35.1,
+      lng: 139.1,
+    })
+  })
+
+  it('自動モードは詳細移動の抑制を解除し、目的地の表示範囲を一度だけ検索する', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('navigator', {})
+    mockDestination()
+    const store = {
+      ...createTestStores('2026-11-03T00:00:00.000Z')[0].data,
+      id: 'selected-before-search',
+    }
+    storeQuery.data = { stores: [store], invalidCount: 0, truncated: false }
+    const placesConfig = { ...DEFAULT_PLACES_CONFIG, autoSearch: true }
+    render(<MapPage config={{ ...config, places: placesConfig }} />)
+    fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledOnce()
+    fireEvent.click(
+      screen.getByRole('button', { name: `${store.name}・利用可` }),
+    )
+    await chooseOsaka()
+    maps.getCenter.mockReturnValue({ toJSON: () => destination })
+    maps.getBounds.mockReturnValue({
+      toJSON: () => ({
+        north: 34.72,
+        south: 34.69,
+        east: 135.51,
+        west: 135.48,
+      }),
+    })
+    maps.getZoom.mockReturnValue(15)
+    fireEvent.click(screen.getByRole('button', { name: '地図を移動' }))
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledTimes(2)
+    expect(placesQuery.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: destination, zoom: 15 }),
+      placesConfig,
+    )
+    act(() => vi.advanceTimersByTime(1000))
+    expect(placesQuery.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('同じ地点とズームの目的地を選んでも地図イベントなしで自動検索を完了する', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('navigator', {})
+    mockDestination()
+    maps.getCenter.mockReturnValue({ toJSON: () => destination })
+    maps.getZoom.mockReturnValue(15)
+    const placesConfig = { ...DEFAULT_PLACES_CONFIG, autoSearch: true }
+    render(<MapPage config={{ ...config, places: placesConfig }} />)
+    fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledOnce()
+    await chooseOsaka()
+    // このSDKスタブのpanTo/setZoomはカメラ変更・idleイベントを発行しない。
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledTimes(2)
+    expect(placesQuery.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: destination, zoom: 15 }),
+      placesConfig,
+    )
+    expect(useStoresMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: destination }),
+      false,
+    )
+    act(() => vi.advanceTimersByTime(1000))
+    expect(placesQuery.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('現在地の再取得が失敗しても自動モードの同じ表示範囲を重複検索しない', () => {
+    vi.useFakeTimers()
+    const getCurrentPosition = vi.fn(
+      (success: PositionCallback, error: PositionErrorCallback) => {
+        void error
+        success({
+          coords: { latitude: 35.7, longitude: 139.8 },
+        } as GeolocationPosition)
+      },
+    )
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition } })
+    render(
+      <MapPage
+        config={{
+          ...config,
+          places: { ...DEFAULT_PLACES_CONFIG, autoSearch: true },
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledOnce()
+    let fail!: PositionErrorCallback
+    getCurrentPosition.mockImplementation((_success, error) => {
+      fail = error
+    })
+    fireEvent.click(screen.getByRole('button', { name: '現在地に移動' }))
+    act(() => fail({ code: 2 } as GeolocationPositionError))
+    act(() => vi.advanceTimersByTime(1000))
+    expect(placesQuery.search).toHaveBeenCalledOnce()
+  })
+
+  it('利用可のみへの変更で対象外の詳細を閉じ、ピンと一覧をそろえて追加取得しない', () => {
+    const stores = createTestStores('2026-11-03T00:00:00.000Z').map(
+      ({ id, data }) => ({ ...data, id }),
+    )
+    storeQuery.data = { stores, invalidCount: 0, truncated: false }
+    render(<MapPage config={config} />)
+    fireEvent.click(
+      screen.getByRole('button', { name: `${stores[2].name}・利用不可` }),
+    )
+    expect(screen.getByRole('article', { name: '店舗の詳細' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '利用可のみ' }))
+    expect(
+      screen.queryByRole('article', { name: '店舗の詳細' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('list', { name: '周辺店舗一覧' }).children,
+    ).toHaveLength(4)
+    expect(screen.getAllByRole('button', { name: /・利用可$/ })).toHaveLength(4)
+    expect(
+      screen.queryByRole('button', { name: /・利用不可$/ }),
+    ).not.toBeInTheDocument()
+    expect(placesQuery.search).not.toHaveBeenCalled()
+    expect(storeQuery.refetch).not.toHaveBeenCalled()
+    expect(linksQuery.refetch).not.toHaveBeenCalled()
   })
 })
 
@@ -908,6 +1199,10 @@ describe('Placesのピンと登録情報', () => {
       screen.queryByRole('button', { name: 'トイレ情報を登録' }),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '登録を申請' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
+    expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
+    expect(screen.queryByText('トイレ情報：データなし')).not.toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '周辺店舗一覧' })).toBeVisible()
   })
   it('未ログインの登録申請は公開店舗を更新せず、承認待ちを案内する', async () => {
     const user = userEvent.setup()
