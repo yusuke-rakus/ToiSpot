@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -21,6 +21,8 @@ import {
 import { registrationLabels, type MapEntry } from '../places/map-entries'
 import type { PlacesSearchState } from '../places/nearby-places'
 import type { useStores } from './use-stores'
+import type { MapPoint } from '../map/map-config'
+import { pointDistance } from '../map/search-area'
 
 type Props = {
   areaLabel?: string
@@ -28,7 +30,6 @@ type Props = {
   selectedStore: Store | null
   pointContent: ReactNode
   onSelectStore: (id: string) => void
-  onBack: () => void
   onEdit?: () => void
   editLabel?: string
   editDisabled?: boolean
@@ -44,6 +45,11 @@ type Props = {
   viewportSearch?: boolean
   placesLimited?: boolean
   placesPartialError?: boolean
+  unfilteredEntries?: MapEntry[]
+  hasFilters?: boolean
+  searchCenter?: MapPoint
+  onClearFilters?: () => void
+  hideFeedback?: boolean
 }
 
 export function StorePanel({
@@ -52,7 +58,6 @@ export function StorePanel({
   selectedStore,
   pointContent,
   onSelectStore,
-  onBack,
   onEdit,
   editLabel,
   editDisabled,
@@ -68,22 +73,26 @@ export function StorePanel({
   viewportSearch = false,
   placesLimited = false,
   placesPartialError = false,
+  unfilteredEntries = entries,
+  hasFilters = false,
+  searchCenter,
+  onClearFilters,
+  hideFeedback = false,
 }: Props) {
   const result = query.data
   return (
     <>
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">トイレ情報</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {result
-              ? `登録店舗 ${entries.filter((entry) => entry.store).length}件`
-              : '登録店舗を確認'}
-          </p>
-        </div>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        <span>
+          {entries.length}件{hasFilters && 'が一致'}
+        </span>
+        <span>登録店舗 {entries.filter((entry) => entry.store).length}件</span>
+        {areaLabel && <span>{areaLabel}</span>}
+      </p>
+      {(query.isError || registrationError) && (
         <Button
           variant="outline"
-          className="h-9 gap-1.5"
+          className="mb-4 h-11"
           disabled={
             !query.enabled ||
             query.isFetching ||
@@ -91,56 +100,41 @@ export function StorePanel({
             searchSuspended
           }
           onClick={onRefresh}
-          aria-label="店舗情報を更新"
         >
-          {query.isFetching ? (
-            <Spinner
-              className="animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          ) : (
-            <RefreshCw aria-hidden="true" />
-          )}
-          更新
+          店舗情報を再取得
         </Button>
-      </div>
-
-      {areaLabel && (
-        <p className="mb-4 text-xs text-muted-foreground">{areaLabel}</p>
       )}
 
-      <StorePanelFeedback
-        query={query}
-        entries={entries}
-        placesStatus={placesStatus}
-        registrationError={registrationError}
-        onRetryPlaces={onRetryPlaces}
-        searchPaused={searchPaused}
-        searchSuspended={searchSuspended}
-        viewportSearch={viewportSearch}
-        placesLimited={placesLimited}
-        placesPartialError={placesPartialError}
-      />
+      {!hideFeedback && (
+        <StorePanelFeedback
+          query={query}
+          entries={unfilteredEntries}
+          placesStatus={placesStatus}
+          registrationError={registrationError}
+          onRetryPlaces={onRetryPlaces}
+          searchPaused={searchPaused}
+          searchSuspended={searchSuspended}
+          viewportSearch={viewportSearch}
+          placesLimited={placesLimited}
+          placesPartialError={placesPartialError}
+        />
+      )}
 
       {pointContent ? (
-        <>
-          <BackButton onClick={onBack} />
-          {pointContent}
-        </>
+        <div className="pt-5">{pointContent}</div>
       ) : selectedStore ? (
-        <>
-          <BackButton onClick={onBack} />
+        <div className="pt-5">
           <SelectedStoreDetails
             store={selectedStore}
             onEdit={onEdit}
             editLabel={editLabel}
             editDisabled={editDisabled}
           />
-        </>
+        </div>
       ) : entries.length > 0 ? (
         <ul
           aria-label="周辺店舗一覧"
-          className="-mx-5 divide-y border-y sm:-mx-7"
+          className="-mx-5 divide-y border-b sm:-mx-7"
         >
           {entries.map((entry) => {
             const store = entry.store
@@ -183,6 +177,18 @@ export function StorePanel({
                           />
                         </ItemActions>
                       </div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {store?.address ?? entry.place?.address}
+                      </p>
+                      {searchCenter && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          検索地点から約
+                          {formatDistance(
+                            pointDistance(searchCenter, entry.location),
+                          )}
+                          （直線距離）
+                        </p>
+                      )}
                     </ItemContent>
                   </button>
                 </Item>
@@ -190,6 +196,21 @@ export function StorePanel({
             )
           })}
         </ul>
+      ) : hasFilters && unfilteredEntries.length > 0 ? (
+        <Empty role="status" className="px-0">
+          <EmptyDescription>
+            取得できた店舗に、条件に一致する店舗はありません。
+          </EmptyDescription>
+          {onClearFilters && (
+            <Button
+              variant="outline"
+              className="mt-3 h-11"
+              onClick={onClearFilters}
+            >
+              検索条件を解除
+            </Button>
+          )}
+        </Empty>
       ) : (
         result && (
           <Empty role="status" className="px-0">
@@ -209,6 +230,12 @@ export function StorePanel({
       )}
     </>
   )
+}
+
+function formatDistance(meters: number) {
+  return meters < 1000
+    ? `${Math.round(meters / 10) * 10}m`
+    : `${(meters / 1000).toFixed(1)}km`
 }
 
 export function StorePanelFeedback({
@@ -348,27 +375,18 @@ export function SelectedStoreDetails({
 }) {
   return (
     <>
+      <StoreDetails store={store} />
       {onEdit && (
         <Button
           variant="outline"
-          className="mb-5 w-full"
+          className="mt-5 w-full"
           onClick={onEdit}
           disabled={editDisabled}
         >
           {editLabel}
         </Button>
       )}
-      <StoreDetails store={store} />
     </>
-  )
-}
-
-function BackButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Button variant="ghost" className="mb-5 -ml-2" onClick={onClick}>
-      <ArrowLeft aria-hidden="true" />
-      一覧へ戻る
-    </Button>
   )
 }
 

@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { StoreDetails } from './store-panel'
+import { describe, expect, it, vi } from 'vitest'
+import { SelectedStoreDetails, StoreDetails } from './store-panel'
 import type { Store } from './store-schema'
 import { createTestStores } from '../../../tests/fixtures/stores'
 
@@ -116,4 +116,31 @@ describe('トイレ情報の詳細', () => {
     ).toHaveLength(4)
     expect(screen.getByText('🚹')).toHaveAttribute('aria-hidden', 'true')
   })
+})
+
+describe('選択した店舗の操作ボタン', () => {
+  it.each(['店舗を編集', '修正を申請'])(
+    '%sを店舗詳細の後に表示する',
+    async (editLabel) => {
+      const onEdit = vi.fn()
+      render(
+        <SelectedStoreDetails
+          store={store}
+          editLabel={editLabel}
+          onEdit={onEdit}
+        />,
+      )
+      const details = screen.getByRole('article', { name: '店舗の詳細' })
+      const button = screen.getByRole('button', { name: editLabel })
+      expect(
+        details.compareDocumentPosition(button) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(
+        screen.queryByRole('button', { name: '一覧へ戻る' }),
+      ).not.toBeInTheDocument()
+      button.click()
+      expect(onEdit).toHaveBeenCalledOnce()
+    },
+  )
 })

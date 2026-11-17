@@ -99,7 +99,9 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   await expect(results).toHaveCount(100)
   expect(await callCount(page)).toBe(5)
   if (!mobile) {
-    await expect(page.getByText('地図の表示範囲・中心から近い順')).toBeVisible()
+    await expect(
+      page.getByText('地図の表示範囲・中心から近い順'),
+    ).toBeAttached()
   }
   const initialRadius = await page.evaluate(
     () =>
@@ -130,7 +132,7 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   if (!mobile) {
     await expect(
       page.getByRole('button', { name: '店舗情報を更新' }),
-    ).toBeDisabled()
+    ).toHaveCount(0)
   }
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await page.waitForTimeout(400)
