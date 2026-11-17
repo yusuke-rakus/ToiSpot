@@ -101,7 +101,7 @@ export function syncAppHostingSecrets(env = process.env, execute = run) {
         'secrets',
         'versions',
         'list',
-        `--secret=${name}`,
+        name,
         '--format=json(name,state)',
         ...projectArgs,
       ]),
