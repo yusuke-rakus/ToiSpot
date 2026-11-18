@@ -77,6 +77,23 @@ it('表示範囲を覆うgeohashで取得し、3kmより遠い店舗も含め、
   )
 })
 
+it('検索半径を指定した場合は、画面内でも50kmの外にある登録店舗を除く', async () => {
+  const search = {
+    ...viewport,
+    bounds: { north: 37, south: 34, east: 142, west: 138 },
+    radiusMeters: 50_000,
+  }
+  state.read.mockResolvedValue({
+    docs: [document('inside', 36), document('beyond-50km', 36.2)],
+  })
+  const result = await readNearbyStores({} as never, search)
+  expect(state.ranges).toHaveBeenCalledWith(
+    [INITIAL_CENTER.lat, INITIAL_CENTER.lng],
+    50_000,
+  )
+  expect(result.stores.map(({ id }) => id)).toEqual(['inside'])
+})
+
 it('範囲ごとの候補上限と取得結果100件の上限を維持する', async () => {
   let batch = 0
   state.read.mockImplementation(async () => ({

@@ -28,10 +28,11 @@ export async function readNearbyStores(
 ) {
   signal?.throwIfAborted()
   const center = areaCenter(area)
+  const viewport = isViewport(area) ? area : undefined
   const bounds = geohashQueryBounds(
     [center.lat, center.lng],
-    isViewport(area)
-      ? coveringRadius(area.bounds, center)
+    viewport
+      ? (viewport.radiusMeters ?? coveringRadius(viewport.bounds, center))
       : NEARBY_RADIUS_KM * 1000,
   )
   const snapshots = await Promise.all(
@@ -56,7 +57,10 @@ export async function readNearbyStores(
       })),
     ),
     center,
-    isViewport(area) ? area.bounds : undefined,
+    viewport?.bounds,
+    viewport?.radiusMeters === undefined
+      ? undefined
+      : viewport.radiusMeters / 1000,
   )
 }
 

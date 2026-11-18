@@ -5,6 +5,7 @@ import {
   render as renderUI,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,10 +24,18 @@ import type { ConveniencePlace } from '../places/nearby-places'
 import type { PlaceLinks } from '../places/place-links'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from '@/components/ui/toaster'
 import { Timestamp } from 'firebase/firestore'
 
 function render(ui: ReactNode) {
-  return renderUI(ui, { wrapper: ThemeProvider })
+  return renderUI(ui, {
+    wrapper: ({ children }) => (
+      <ThemeProvider>
+        <Toaster />
+        {children}
+      </ThemeProvider>
+    ),
+  })
 }
 
 const admin = vi.hoisted(() => ({
@@ -263,6 +272,25 @@ function mapClickEvent(latLng: MapPoint) {
     detail: { latLng },
     stop: vi.fn(),
   }
+}
+
+function setMapViewport(center: MapPoint, zoom = 15) {
+  maps.getCenter.mockReturnValue({ toJSON: () => center })
+  maps.getBounds.mockReturnValue({
+    toJSON: () => ({
+      north: center.lat + 0.01,
+      south: center.lat - 0.01,
+      east: center.lng + 0.01,
+      west: center.lng - 0.01,
+    }),
+  })
+  maps.getZoom.mockReturnValue(zoom)
+}
+
+function finishMapMove(center: MapPoint) {
+  setMapViewport(center)
+  fireEvent.click(screen.getByRole('button', { name: '地図を移動' }))
+  act(() => vi.advanceTimersByTime(300))
 }
 
 beforeEach(() => {
@@ -668,13 +696,16 @@ it('自動モードで縮小すると詳細を残して全検索を停止し、�
   fireEvent.click(screen.getByRole('button', { name: '店舗情報を再取得' }))
   expect(storeQuery.refetch).toHaveBeenCalledOnce()
   fireEvent.click(screen.getByRole('button', { name: 'ズーム12' }))
+  act(() => vi.advanceTimersByTime(0))
   expect(screen.getByText('地図を拡大すると検索を再開します')).toBeVisible()
   expect(screen.getByText('トイレ情報：データなし')).toBeVisible()
   expect(
     screen.queryByRole('button', { name: 'この周辺を検索' }),
   ).not.toBeInTheDocument()
   expect(
-    screen.getByRole('button', { name: 'コンビニ検索を再試行' }),
+    within(
+      screen.getByRole('complementary', { name: '店舗と選択した場所の情報' }),
+    ).getByRole('button', { name: 'コンビニ検索を再試行' }),
   ).toBeDisabled()
   expect(
     screen.getByRole('button', { name: '店舗情報を再取得' }),
@@ -823,13 +854,28 @@ describe('Firestoreの店舗表示', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('不正データ・取得上限・利用不可を明示する', () => {
+  it('不正データと取得上限を画面下部の中央に通知し、自動で閉じる', () => {
+    vi.useFakeTimers()
     storeQuery.data = { stores, invalidCount: 2, truncated: true }
     render(<MapPage config={config} />)
+    act(() => vi.advanceTimersByTime(0))
+    const limit = screen.getByText(/取得上限に達したため/)
+    expect(limit.closest('[data-sonner-toaster]')).toHaveAttribute(
+      'data-x-position',
+      'center',
+    )
+    expect(limit.closest('[data-sonner-toaster]')).toHaveAttribute(
+      'data-y-position',
+      'bottom',
+    )
     expect(screen.getByText(/形式が正しくない2件/)).toBeVisible()
-    expect(screen.getByText(/取得上限に達したため/)).toBeVisible()
+    expect(limit).toBeVisible()
     expect(screen.getAllByText('利用不可')).toHaveLength(2)
     expect(screen.queryByText('架空のサンプルデータ')).not.toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(5000))
+    act(() => vi.advanceTimersByTime(500))
+    fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
+    expect(screen.queryByText(/取得上限に達したため/)).not.toBeInTheDocument()
   })
 
   it.each([
@@ -837,7 +883,7 @@ describe('Firestoreの店舗表示', () => {
     ['empty', '半径3km以内に登録された店舗はありません。'],
     ['error', '店舗情報を読み込めませんでした。'],
     ['disabled', '登録情報を利用できません。'],
-  ])('%s状態でも地図操作は継続できる', (state, message) => {
+  ])('%s状態でも地図操作は継続できる', async (state, message) => {
     storeQuery.data =
       state === 'empty'
         ? { stores: [], invalidCount: 0, truncated: false }
@@ -846,7 +892,9 @@ describe('Firestoreの店舗表示', () => {
     storeQuery.isError = state === 'error'
     storeQuery.enabled = state !== 'disabled'
     render(<MapPage config={config} />)
-    expect(screen.getByText((text) => text.startsWith(message))).toBeVisible()
+    await waitFor(() => {
+      expect(screen.getByText((text) => text.startsWith(message))).toBeVisible()
+    })
     fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
   })
@@ -896,18 +944,24 @@ describe('現在地', () => {
   })
 
   it('位置情報に非対応でも東京駅周辺を表示する', () => {
+    vi.useFakeTimers()
     vi.stubGlobal('navigator', {})
+    setMapViewport(INITIAL_CENTER, 14)
     render(<MapPage config={config} />)
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'このブラウザでは現在地を取得できません',
-    )
-    expect(screen.getByText('東京駅から半径3km・近い順')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(300))
+    expect(
+      screen.getByText(/このブラウザでは現在地を取得できません/),
+    ).toBeVisible()
+    expect(
+      screen.getByText('地図の表示範囲・中心から近い順'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
   })
 
   it('初回描画後に自動取得し、現在地の周辺データへ切り替える', () => {
+    vi.useFakeTimers()
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({
         coords: { latitude: 34.7, longitude: 135.5 },
@@ -922,15 +976,18 @@ describe('現在地', () => {
     expect(maps.panTo).toHaveBeenCalledWith({ lat: 34.7, lng: 135.5 })
     expect(maps.setZoom).toHaveBeenCalledWith(15)
     expect(screen.getByLabelText('現在地')).toBeInTheDocument()
+    finishMapMove({ lat: 34.7, lng: 135.5 })
     expect(useStoresMock).toHaveBeenLastCalledWith(
-      { lat: 34.7, lng: 135.5 },
+      expect.objectContaining({ center: { lat: 34.7, lng: 135.5 } }),
       false,
     )
-    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith({
-      lat: 34.7,
-      lng: 135.5,
-    })
-    expect(screen.getByText('現在地から半径3km・近い順')).toBeInTheDocument()
+    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ center: { lat: 34.7, lng: 135.5 }, zoom: 15 }),
+      DEFAULT_PLACES_CONFIG,
+    )
+    expect(
+      screen.getByText('地図の表示範囲・中心から近い順'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
     expect(getCurrentPosition).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '現在地に移動' }))
@@ -938,6 +995,8 @@ describe('現在地', () => {
   })
 
   it('位置情報を拒否しても東京駅周辺を検索する', () => {
+    vi.useFakeTimers()
+    setMapViewport(INITIAL_CENTER, 14)
     const getCurrentPosition = vi.fn((_success, error: PositionErrorCallback) =>
       error({ code: 1 } as GeolocationPositionError),
     )
@@ -945,14 +1004,18 @@ describe('現在地', () => {
     render(<MapPage config={config} />)
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
     expect(getCurrentPosition).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('東京駅から半径3km・近い順')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      '位置情報の利用が許可されていません',
-    )
+    act(() => vi.advanceTimersByTime(300))
+    expect(
+      screen.getByText('地図の表示範囲・中心から近い順'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/位置情報の利用が許可されていません/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
     expect(maps.panTo).not.toHaveBeenCalled()
-    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(INITIAL_CENTER)
+    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ center: INITIAL_CENTER, zoom: 14 }),
+      DEFAULT_PLACES_CONFIG,
+    )
   })
 
   it('位置情報のタイムアウトを区別する', () => {
@@ -1017,11 +1080,18 @@ describe('場所検索と絞り込みの地図連携', () => {
     expect(completions).toHaveLength(1)
     await chooseOsaka()
     expect(maps.panTo).toHaveBeenLastCalledWith(destination)
-    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(destination)
+    expect(placesQuery.search).not.toHaveBeenCalled()
+    finishMapMove(destination)
+    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ center: destination, zoom: 15 }),
+      DEFAULT_PLACES_CONFIG,
+    )
     expect(fetchFields).toHaveBeenCalledExactlyOnceWith({
       fields: ['location'],
     })
-    expect(screen.getByText('大阪駅から半径3km・近い順')).toBeInTheDocument()
+    expect(
+      screen.getByText('地図の表示範囲・中心から近い順'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '現在地に移動' }))
     expect(completions).toHaveLength(2)
     act(() =>
@@ -1035,11 +1105,12 @@ describe('場所検索と絞り込みの地図連携', () => {
       } as GeolocationPosition),
     )
     expect(maps.panTo).toHaveBeenLastCalledWith({ lat: 35.1, lng: 139.1 })
+    finishMapMove({ lat: 35.1, lng: 139.1 })
     expect(placesQuery.search).toHaveBeenCalledTimes(2)
-    expect(placesQuery.search).toHaveBeenLastCalledWith({
-      lat: 35.1,
-      lng: 139.1,
-    })
+    expect(placesQuery.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: { lat: 35.1, lng: 139.1 }, zoom: 15 }),
+      DEFAULT_PLACES_CONFIG,
+    )
   })
 
   it('自動モードは詳細移動の抑制を解除し、目的地の表示範囲を一度だけ検索する', async () => {
@@ -1085,8 +1156,7 @@ describe('場所検索と絞り込みの地図連携', () => {
     vi.useFakeTimers()
     vi.stubGlobal('navigator', {})
     mockDestination()
-    maps.getCenter.mockReturnValue({ toJSON: () => destination })
-    maps.getZoom.mockReturnValue(15)
+    setMapViewport(destination)
     const placesConfig = { ...DEFAULT_PLACES_CONFIG, autoSearch: true }
     render(<MapPage config={{ ...config, places: placesConfig }} />)
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
@@ -1128,7 +1198,7 @@ describe('場所検索と絞り込みの地図連携', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
-    act(() => vi.advanceTimersByTime(300))
+    finishMapMove({ lat: 35.7, lng: 139.8 })
     expect(placesQuery.search).toHaveBeenCalledOnce()
     let fail!: PositionErrorCallback
     getCurrentPosition.mockImplementation((_success, error) => {
@@ -1355,24 +1425,33 @@ describe('Placesのピンと登録情報', () => {
     expect(screen.getByRole('article', { name: '店舗の詳細' })).toBeVisible()
     expect(screen.queryByText('トイレ情報：データなし')).not.toBeInTheDocument()
   })
-  it('地図移動・地点選択では検索せず、検索ボタンから両方の検索中心を更新する', async () => {
-    const user = userEvent.setup()
+  it('縮小しても手動検索でき、Placesと登録店舗の検索半径を50kmに制限する', () => {
+    vi.useFakeTimers()
     vi.stubGlobal('navigator', {})
     render(<MapPage config={config} />)
-    await user.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    fireEvent.click(screen.getByRole('button', { name: '地図の描画を完了' }))
+    act(() => vi.advanceTimersByTime(300))
+    expect(placesQuery.search).toHaveBeenCalledOnce()
     placesQuery.search.mockClear()
-    await user.click(screen.getByRole('button', { name: '地図を移動' }))
-    await user.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
+    const center = { lat: 35.7, lng: 139.8 }
+    finishMapMove(center)
+    fireEvent.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
+    const bounds = { north: 36.3, south: 35.1, east: 140.5, west: 139.1 }
+    maps.getBounds.mockReturnValue({ toJSON: () => bounds })
+    const searchButton = screen.getByRole('button', { name: 'この周辺を検索' })
+    fireEvent.click(screen.getByRole('button', { name: 'ズーム12' }))
+    expect(searchButton).toBeEnabled()
     expect(placesQuery.search).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'この周辺を検索' }))
-    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith({
-      lat: 35.7,
-      lng: 139.8,
-    })
-    expect(useStoresMock).toHaveBeenLastCalledWith(
-      { lat: 35.7, lng: 139.8 },
-      false,
+    fireEvent.click(searchButton)
+    const viewport = { center, bounds, zoom: 12, radiusMeters: 50_000 }
+    expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(
+      viewport,
+      DEFAULT_PLACES_CONFIG,
     )
+    expect(useStoresMock).toHaveBeenLastCalledWith(viewport, false)
+    expect(
+      screen.getByText('地図の中心から半径50km・近い順'),
+    ).toBeInTheDocument()
   })
   it('Places検索失敗でも登録店舗は残り、検索だけ再試行できる', async () => {
     placesQuery.status = 'error'
@@ -1389,8 +1468,11 @@ describe('Placesのピンと登録情報', () => {
     expect(
       screen.queryByText('コンビニ検索の結果は0件です。'),
     ).not.toBeInTheDocument()
-    await userEvent.click(
-      screen.getByRole('button', { name: 'コンビニ検索を再試行' }),
+    const notifications = screen.getByRole('region', { name: /^通知/ })
+    fireEvent.click(
+      await within(notifications).findByRole('button', {
+        name: 'コンビニ検索を再試行',
+      }),
     )
     expect(placesQuery.search).toHaveBeenCalledExactlyOnceWith(INITIAL_CENTER)
   })
@@ -1471,7 +1553,7 @@ describe('Placesのピンと登録情報', () => {
     ).toHaveTextContent(store.name)
     expect(placesQuery.search).not.toHaveBeenCalled()
   })
-  it('上限の説明文を表示せず、検索中は再検索ボタンを無効にする', () => {
+  it('検索中は通知を表示し、再検索ボタンを無効にする', async () => {
     placesQuery.limited = true
     const { rerender } = render(<MapPage config={config} />)
     expect(
@@ -1485,6 +1567,7 @@ describe('Placesのピンと登録情報', () => {
     expect(
       screen.getByRole('button', { name: 'コンビニを検索中' }),
     ).toBeDisabled()
+    expect(await screen.findByText('周辺のコンビニを検索中')).toBeVisible()
   })
   it('管理者の新規登録にPlacesの店舗情報を渡し、座標の手入力を許可しない', async () => {
     admin.status = 'admin'

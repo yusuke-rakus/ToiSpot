@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowUpRight } from 'lucide-react'
-import { Spinner } from '@/components/ui/spinner'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Item,
   ItemContent,
@@ -40,16 +38,13 @@ type Props = {
   registrationFetching: boolean
   registrationError: boolean
   onRetryPlaces: () => void
-  searchPaused?: boolean
   searchSuspended?: boolean
   viewportSearch?: boolean
-  placesLimited?: boolean
   placesPartialError?: boolean
   unfilteredEntries?: MapEntry[]
   hasFilters?: boolean
   searchCenter?: MapPoint
   onClearFilters?: () => void
-  hideFeedback?: boolean
 }
 
 export function StorePanel({
@@ -68,16 +63,13 @@ export function StorePanel({
   registrationFetching,
   registrationError,
   onRetryPlaces,
-  searchPaused = false,
   searchSuspended = false,
   viewportSearch = false,
-  placesLimited = false,
   placesPartialError = false,
   unfilteredEntries = entries,
   hasFilters = false,
   searchCenter,
   onClearFilters,
-  hideFeedback = false,
 }: Props) {
   const result = query.data
   return (
@@ -105,19 +97,15 @@ export function StorePanel({
         </Button>
       )}
 
-      {!hideFeedback && (
-        <StorePanelFeedback
-          query={query}
-          entries={unfilteredEntries}
-          placesStatus={placesStatus}
-          registrationError={registrationError}
-          onRetryPlaces={onRetryPlaces}
-          searchPaused={searchPaused}
-          searchSuspended={searchSuspended}
-          viewportSearch={viewportSearch}
-          placesLimited={placesLimited}
-          placesPartialError={placesPartialError}
-        />
+      {(placesStatus === 'error' || placesPartialError) && (
+        <Button
+          variant="outline"
+          className="mb-4 h-11"
+          disabled={searchSuspended || placesStatus === 'loading'}
+          onClick={onRetryPlaces}
+        >
+          コンビニ検索を再試行
+        </Button>
       )}
 
       {pointContent ? (
@@ -238,130 +226,6 @@ function formatDistance(meters: number) {
     : `${(meters / 1000).toFixed(1)}km`
 }
 
-export function StorePanelFeedback({
-  query,
-  entries,
-  placesStatus,
-  registrationError,
-  onRetryPlaces,
-  searchPaused = false,
-  searchSuspended = false,
-  viewportSearch = false,
-  placesLimited = false,
-  placesPartialError = false,
-}: Pick<
-  Props,
-  | 'query'
-  | 'entries'
-  | 'placesStatus'
-  | 'registrationError'
-  | 'onRetryPlaces'
-  | 'searchPaused'
-  | 'searchSuspended'
-  | 'viewportSearch'
-  | 'placesLimited'
-  | 'placesPartialError'
->) {
-  const result = query.data
-  return (
-    <>
-      {!query.enabled && <Notice>登録情報を利用できません。</Notice>}
-      {searchPaused && <Notice>地図を拡大すると検索を再開します</Notice>}
-      {query.enabled && query.isPending && !searchSuspended && (
-        <p
-          role="status"
-          className="flex items-center gap-2 py-5 text-sm text-muted-foreground"
-        >
-          <Spinner
-            className="size-4 animate-spin motion-reduce:animate-none"
-            aria-hidden="true"
-          />
-          店舗情報を読み込み中
-        </p>
-      )}
-      {query.isError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>
-            店舗情報を読み込めませんでした。更新してください。
-            {result && '表示中の情報は前回取得した内容です。'}
-          </AlertDescription>
-        </Alert>
-      )}
-      {result && result.invalidCount > 0 && (
-        <p
-          role="status"
-          className="mb-4 text-xs leading-5 text-muted-foreground"
-        >
-          形式が正しくない{result.invalidCount}件を表示できませんでした。
-        </p>
-      )}
-      {result?.truncated && (
-        <p
-          role="status"
-          className="mb-4 text-xs leading-5 text-muted-foreground"
-        >
-          取得上限に達したため、一部の店舗を表示しています。
-        </p>
-      )}
-
-      {placesStatus === 'loading' && !searchSuspended && (
-        <Notice>周辺のコンビニを検索中</Notice>
-      )}
-      {placesLimited && (
-        <Notice>取得上限に達したため、一部のコンビニを表示しています。</Notice>
-      )}
-      {placesPartialError && placesStatus !== 'error' && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription className="space-y-2">
-            <p>一部の範囲のコンビニを取得できませんでした。</p>
-            <Button
-              variant="outline"
-              onClick={onRetryPlaces}
-              disabled={searchSuspended || placesStatus === 'loading'}
-            >
-              コンビニ検索を再試行
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {placesStatus === 'error' && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription className="space-y-2">
-            <p>コンビニを検索できませんでした。</p>
-            {viewportSearch && entries.some((entry) => entry.place) && (
-              <p>前回取得したコンビニを表示しています。</p>
-            )}
-            <Button
-              variant="outline"
-              onClick={onRetryPlaces}
-              disabled={searchSuspended}
-            >
-              コンビニ検索を再試行
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {placesStatus === 'success' &&
-        !placesPartialError &&
-        !placesLimited &&
-        entries.every((entry) => !entry.place) && (
-          <Empty role="status" className="px-0">
-            <EmptyDescription>
-              周辺にコンビニが見つかりません。
-            </EmptyDescription>
-          </Empty>
-        )}
-      {registrationError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>
-            登録情報を確認できません。更新してください。
-          </AlertDescription>
-        </Alert>
-      )}
-    </>
-  )
-}
-
 export function SelectedStoreDetails({
   store,
   onEdit,
@@ -387,14 +251,6 @@ export function SelectedStoreDetails({
         </Button>
       )}
     </>
-  )
-}
-
-function Notice({ children }: { children: ReactNode }) {
-  return (
-    <p className="py-4 text-sm leading-7 text-muted-foreground" role="status">
-      {children}
-    </p>
   )
 }
 

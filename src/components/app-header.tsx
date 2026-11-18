@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { Bell, LogOut, MapPin } from 'lucide-react'
+import { cn } from 'cn'
 import { useAdmin } from '@/features/auth/admin-provider'
 import { usePendingStoreRequestCount } from '@/features/store-requests/use-store-requests'
+import { GlassSurface } from '@/components/glass-surface'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import {
@@ -10,9 +12,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-
-const actionButtonClassName =
-  'size-10 hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent'
 
 export function AppHeader() {
   return (
@@ -30,9 +29,12 @@ export function AppHeader() {
   )
 }
 
-export function AppHeaderActions() {
+export function AppHeaderActions({ glass = false }: { glass?: boolean }) {
   const admin = useAdmin()
   const pending = usePendingStoreRequestCount()
+  const actionButtonClassName = glass
+    ? 'relative h-10 w-8 rounded-full transition hover:bg-foreground/10 focus-visible:z-10 aria-expanded:bg-foreground/10 dark:hover:bg-foreground/10 max-[360px]:w-[30px] lg:w-10'
+    : 'size-10 hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent'
   const count = pending.isError ? undefined : pending.data
   const requestLabel = pending.isError
     ? '登録・修正申請一覧（件数を取得できませんでした）'
@@ -40,55 +42,61 @@ export function AppHeaderActions() {
       ? '登録・修正申請一覧（件数を確認中）'
       : `登録・修正申請一覧（申請中${count}件）`
 
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <ThemeToggle className={actionButtonClassName} />
-        {admin.status === 'admin' && (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
+  const actions = (
+    <div
+      className={cn('flex shrink-0 items-center', !glass && 'ml-auto gap-2')}
+    >
+      <ThemeToggle className={actionButtonClassName} />
+      {admin.status === 'admin' && (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className={cn('relative', actionButtonClassName)}
+              >
+                <Link to="/admin/store-requests" aria-label={requestLabel}>
+                  <Bell className="size-5" aria-hidden="true" />
+                  {count !== undefined && count > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-0 right-0 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 font-semibold text-primary-foreground tabular-nums"
+                    >
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">通知</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
                 <Button
-                  asChild
                   variant="ghost"
                   size="icon"
-                  className={`relative ${actionButtonClassName}`}
+                  className={actionButtonClassName}
+                  aria-label="ログアウト"
+                  disabled={admin.busy}
+                  onClick={() => void admin.logout()}
                 >
-                  <Link to="/admin/store-requests" aria-label={requestLabel}>
-                    <Bell className="size-5" aria-hidden="true" />
-                    {count !== undefined && count > 0 && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute top-0 right-0 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 font-semibold text-primary-foreground tabular-nums"
-                      >
-                        {count > 99 ? '99+' : count}
-                      </span>
-                    )}
-                  </Link>
+                  <LogOut className="size-5" aria-hidden="true" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">通知</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={actionButtonClassName}
-                    aria-label="ログアウト"
-                    disabled={admin.busy}
-                    onClick={() => void admin.logout()}
-                  >
-                    <LogOut className="size-5" aria-hidden="true" />
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">ログアウト</TooltipContent>
-            </Tooltip>
-          </>
-        )}
-      </div>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">ログアウト</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+    </div>
+  )
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      {glass ? <GlassSurface>{actions}</GlassSurface> : actions}
     </TooltipProvider>
   )
 }

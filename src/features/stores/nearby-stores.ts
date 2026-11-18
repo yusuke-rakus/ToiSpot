@@ -15,6 +15,7 @@ export function collectNearbyStores(
   batches: ReadonlyArray<ReadonlyArray<{ id: string; data: unknown }>>,
   center: MapPoint,
   viewport?: MapBounds,
+  radiusKm = viewport ? Infinity : NEARBY_RADIUS_KM,
 ): StoreListResult {
   const seen = new Set<string>()
   const matches: { store: Store; distance: number }[] = []
@@ -33,9 +34,8 @@ export function collectNearbyStores(
       const { lat, lng } = parsed.data.location
       const distance = distanceBetween([center.lat, center.lng], [lat, lng])
       if (
-        viewport
-          ? containsPoint(viewport, { lat, lng })
-          : distance <= NEARBY_RADIUS_KM
+        distance <= radiusKm &&
+        (!viewport || containsPoint(viewport, { lat, lng }))
       )
         matches.push({ store: { ...parsed.data, id: document.id }, distance })
     }

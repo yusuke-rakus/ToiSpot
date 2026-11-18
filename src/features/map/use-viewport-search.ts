@@ -4,14 +4,14 @@ import { searchAreaKey, validViewport, type MapViewport } from './search-area'
 
 export function useViewportSearch({
   map,
-  enabled,
+  autoSearch,
   ready,
   minZoom,
   onSearch,
   onSuspend,
 }: {
   map: google.maps.Map | null
-  enabled: boolean
+  autoSearch: boolean
   ready: boolean
   minZoom: number
   onSearch: (viewport: MapViewport) => void
@@ -22,6 +22,8 @@ export function useViewportSearch({
   const lastRequested = useRef<string | null>(null)
   const lastViewport = useRef<MapViewport | null>(null)
   const suppressed = useRef<{ center: MapPoint; zoom: number } | null>(null)
+  const panTarget = useRef<{ center: MapPoint; zoom: number } | null>(null)
+  const pendingSearch = useRef(true)
   const previousMap = useRef(map)
   const clearTimer = useCallback(() => {
     if (timer.current !== null) clearTimeout(timer.current)
@@ -49,7 +51,7 @@ export function useViewportSearch({
 
   const onChange = useCallback(
     (viewport: MapViewport) => {
-      if (!enabled || !ready) return
+      if (!ready || (!autoSearch && !pendingSearch.current)) return
       clearTimer()
       if (suppressed.current) return
       if (
@@ -58,34 +60,33 @@ export function useViewportSearch({
       )
         return
       lastRequested.current = null
-      onSuspend(viewport.zoom < minZoom)
+      onSuspend(autoSearch && viewport.zoom < minZoom)
     },
-    [enabled, ready, clearTimer, minZoom, onSuspend],
+    [autoSearch, ready, clearTimer, minZoom, onSuspend],
   )
 
   const onIdle = useCallback(() => {
-    if (!enabled || !ready) return
+    if (!ready || (!autoSearch && !pendingSearch.current)) return
     const viewport = readViewport()
     if (!viewport) {
       clearTimer()
       onSuspend(false)
       return
     }
+    const target = panTarget.current
+    if (target && !matchesCamera(viewport, target)) return
+    panTarget.current = null
+    const zoomPaused = autoSearch && viewport.zoom < minZoom
     lastViewport.current = viewport
     const expected = suppressed.current
     suppressed.current = null
-    if (
-      expected &&
-      Math.abs(viewport.center.lat - expected.center.lat) < 0.00001 &&
-      Math.abs(viewport.center.lng - expected.center.lng) < 0.00001 &&
-      Math.abs(viewport.zoom - expected.zoom) < 0.001
-    ) {
+    if (expected && matchesCamera(viewport, expected)) {
       clearTimer()
       lastRequested.current = searchAreaKey(viewport)
-      onSuspend(viewport.zoom < minZoom ? true : null)
+      onSuspend(zoomPaused ? true : null)
       return
     }
-    if (viewport.zoom < minZoom) {
+    if (zoomPaused) {
       clearTimer()
       lastRequested.current = null
       onSuspend(true)
@@ -97,10 +98,19 @@ export function useViewportSearch({
     onSuspend(false)
     timer.current = setTimeout(() => {
       timer.current = null
+      pendingSearch.current = false
       lastRequested.current = key
       onSearch(viewport)
     }, 300)
-  }, [enabled, ready, readViewport, clearTimer, minZoom, onSearch, onSuspend])
+  }, [
+    autoSearch,
+    ready,
+    readViewport,
+    clearTimer,
+    minZoom,
+    onSearch,
+    onSuspend,
+  ])
 
   useEffect(() => {
     onIdle()
@@ -108,34 +118,53 @@ export function useViewportSearch({
   }, [onIdle, clearTimer])
 
   const searchNow = useCallback(() => {
-    if (!enabled || !ready) return
+    if (!ready) return
     const viewport = readViewport()
-    if (!viewport || viewport.zoom < minZoom) return
+    if (!viewport || (autoSearch && viewport.zoom < minZoom)) return
     clearTimer()
+    pendingSearch.current = false
+    panTarget.current = null
     suppressed.current = null
     lastViewport.current = viewport
     lastRequested.current = searchAreaKey(viewport)
     onSearch(viewport)
-  }, [enabled, ready, readViewport, minZoom, clearTimer, onSearch])
+  }, [autoSearch, ready, readViewport, minZoom, clearTimer, onSearch])
 
   const suppressPan = useCallback(
     (center: MapPoint, zoom: number) => {
-      if (!enabled) return
+      if (!autoSearch && !pendingSearch.current) return
       clearTimer()
       suppressed.current = { center, zoom }
     },
-    [enabled, clearTimer],
+    [autoSearch, clearTimer],
   )
   // 目的地への移動は詳細表示の移動と異なり、移動先での検索を許可する。
-  const preparePan = useCallback(() => {
-    clearTimer()
-    suppressed.current = null
-    lastRequested.current = null
-  }, [clearTimer])
+  const preparePan = useCallback(
+    (center: MapPoint, zoom: number) => {
+      clearTimer()
+      pendingSearch.current = true
+      panTarget.current = { center, zoom }
+      suppressed.current = null
+      lastRequested.current = null
+    },
+    [clearTimer],
+  )
   const onDragStart = useCallback(() => {
     suppressed.current = null
+    panTarget.current = null
     const viewport = readViewport()
     if (viewport) onChange(viewport)
   }, [readViewport, onChange])
   return { onChange, onIdle, searchNow, suppressPan, preparePan, onDragStart }
+}
+
+function matchesCamera(
+  viewport: MapViewport,
+  { center, zoom }: { center: MapPoint; zoom: number },
+) {
+  return (
+    Math.abs(viewport.center.lat - center.lat) < 0.00001 &&
+    Math.abs(viewport.center.lng - center.lng) < 0.00001 &&
+    Math.abs(viewport.zoom - zoom) < 0.001
+  )
 }

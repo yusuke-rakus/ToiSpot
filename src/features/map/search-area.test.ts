@@ -3,8 +3,10 @@ import { DEFAULT_PLACES_CONFIG, getMapConfig } from './map-config'
 import {
   boundsCenter,
   containsPoint,
+  pointDistance,
   searchAreaKey,
   validViewport,
+  viewportSearchRadius,
   type MapViewport,
 } from './search-area'
 
@@ -91,6 +93,31 @@ describe('表示範囲', () => {
     expect(containsPoint(view.bounds, { lat: 0, lng: -179.5 })).toBe(true)
     expect(containsPoint(view.bounds, { lat: 0, lng: 0 })).toBe(false)
     expect(Math.abs(boundsCenter(view.bounds).lng)).toBe(180)
+    expect(
+      viewportSearchRadius({
+        ...view,
+        bounds: { ...view.bounds, west: 179.99, east: -179.95 },
+      }),
+    ).toBeCloseTo(pointDistance(view.center, { lat: 0, lng: 179.99 }), 6)
+  })
+  it('緯度が高いときも東西の辺への最短距離を使う', () => {
+    const center = { lat: 70, lng: 0 }
+    const radius = viewportSearchRadius({
+      ...view,
+      center,
+      bounds: { north: 71, south: 69, west: -2, east: 1 },
+    })
+    const distanceAtSameLatitude = pointDistance(center, { lat: 70, lng: 1 })
+    expect(radius).toBeGreaterThan(38_000)
+    expect(radius).toBeLessThan(distanceAtSameLatitude)
+  })
+  it('世界全体の経度を表示するとき、日付変更線を画面の辺として扱わない', () => {
+    expect(
+      viewportSearchRadius({
+        ...view,
+        bounds: { ...view.bounds, west: -180, east: 180 },
+      }),
+    ).toBe(50_000)
   })
   it('プロパティ順やSDKの微小な揺れで検索条件を変更しない', () => {
     expect(searchAreaKey(view)).toBe(
@@ -107,5 +134,6 @@ describe('表示範囲', () => {
       validViewport({ ...view, bounds: { ...view.bounds, north: -1 } }),
     ).toBe(false)
     expect(validViewport({ ...view, center: { lat: 91, lng: 0 } })).toBe(false)
+    expect(validViewport({ ...view, center: { lat: 0, lng: 0 } })).toBe(false)
   })
 })
