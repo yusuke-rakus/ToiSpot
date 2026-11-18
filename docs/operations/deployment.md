@@ -141,7 +141,7 @@ Firebase Web設定やMap ID自体は秘密の認証情報ではないが、プ�
 
 ### Git管理する動作設定
 
-`apphosting.yaml`では`VITE_USE_FIREBASE_EMULATORS=false`、`VITE_PLACES_AUTO_SEARCH=false`、`VITE_PLACES_EXPANDED_SEARCH=true`、`VITE_PLACES_MIN_ZOOM=13`、`VITE_PLACES_MAX_RESULTS=100`、`VITE_PLACES_MAX_REQUESTS=9`を通常の`value`として管理する。すべて`availability: [BUILD]`とし、実行サーバーへは渡さない。変更後は新しいコミットをActionsでロールアウトする。
+`apphosting.yaml`では`VITE_USE_FIREBASE_EMULATORS=false`、`VITE_PLACES_AUTO_SEARCH=false`、`VITE_PLACES_EXPANDED_SEARCH=true`、`VITE_PLACES_MIN_ZOOM=13`、`VITE_PLACES_MAX_RESULTS=20`、`VITE_PLACES_MAX_REQUESTS=1`を通常の`value`として管理する。すべて`availability: [BUILD]`とし、実行サーバーへは渡さない。変更後は新しいコミットをActionsでロールアウトする。
 
 ### 地図からの管理者ログイン（任意）
 

@@ -14,8 +14,8 @@ import { Toaster } from '@/components/ui/toaster'
 const rootRoute = createRootRoute({
   component: () => (
     <>
-      <Outlet />
       <Toaster />
+      <Outlet />
     </>
   ),
   notFoundComponent: () => (

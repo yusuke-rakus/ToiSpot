@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PLACES_CONFIG, INITIAL_CENTER } from '../map/map-config'
-import type { MapViewport } from '../map/search-area'
+import { pointDistance, type MapViewport } from '../map/search-area'
 import {
   searchConveniencePlaces,
   searchViewportPlaces,
@@ -147,6 +147,54 @@ describe('表示範囲の分割検索', () => {
       }),
     ).rejects.toThrow('Invalid search viewport')
     expect(nearby).not.toHaveBeenCalled()
+  })
+})
+
+describe('表示範囲を円1つで検索', () => {
+  const config = { ...DEFAULT_PLACES_CONFIG, maxRequests: 1, maxResults: 20 }
+
+  it('表示範囲に合わせて、中心から最も近い辺までの距離で検索する', async () => {
+    const center = { lat: 35, lng: 139 }
+    const bounds = { north: 35.04, south: 34.99, east: 139.02, west: 138.91 }
+    await searchViewportPlaces({ ...viewport, center, bounds }, config)
+    expect(nearby).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        locationRestriction: {
+          center,
+          radius: pointDistance(center, {
+            lat: bounds.south,
+            lng: center.lng,
+          }),
+        },
+        maxResultCount: 20,
+      }),
+    )
+    await searchViewportPlaces(
+      { ...viewport, center, bounds: { ...bounds, south: 34.995 }, zoom: 15 },
+      config,
+    )
+    expect(nearby).toHaveBeenCalledTimes(2)
+    expect(nearby.mock.calls[1][0].locationRestriction.radius).toBeLessThan(
+      nearby.mock.calls[0][0].locationRestriction.radius,
+    )
+  })
+
+  it('広い表示範囲でも中心を維持し、半径50km・設定件数で1回だけ検索する', async () => {
+    nearby.mockResolvedValue({
+      places: Array.from({ length: 20 }, (_, index) => place(`ChIJ_${index}`)),
+    })
+    const result = await searchViewportPlaces(
+      { ...viewport, bounds: { north: 38, south: 32, east: 145, west: 135 } },
+      { ...config, maxResults: 7 },
+    )
+    expect(nearby).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        locationRestriction: { center: viewport.center, radius: 50_000 },
+        maxResultCount: 7,
+      }),
+    )
+    expect(result.places).toHaveLength(7)
+    expect(result.limited).toBe(true)
   })
 })
 

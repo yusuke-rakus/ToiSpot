@@ -60,7 +60,7 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
       contentType: 'application/javascript',
       body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 };
         export const INITIAL_ZOOM = 14;
-        export const DEFAULT_PLACES_CONFIG = { autoSearch: false };
+        export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 20, maxRequests: 1 };
         export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } }
         export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
     }),
@@ -124,7 +124,7 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
                   displayName: 'セブン-イレブン 申請テスト店',
                   formattedAddress: '申請テストの住所',
                   location: {
-                    toJSON: () => ({ lat: 35.678, lng: 139.78 }),
+                    toJSON: () => ({ lat: 35.678, lng: 139.775 }),
                   },
                   attributions: [],
                 },

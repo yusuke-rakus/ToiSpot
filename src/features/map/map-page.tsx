@@ -18,18 +18,11 @@ import {
   type MapMouseEvent,
 } from '@vis.gl/react-google-maps'
 import { useNavigate } from '@tanstack/react-router'
-import {
-  CircleAlert,
-  List,
-  LocateFixed,
-  MapPin,
-  RotateCcw,
-  X,
-} from 'lucide-react'
+import { List, LocateFixed, MapPin, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
-import { Alert, AlertDescription, AlertAction } from '@/components/ui/alert'
 import {
   Empty,
   EmptyHeader,
@@ -58,11 +51,7 @@ import {
 import { useTheme } from '@/components/theme-provider'
 import { firebaseConnection, usesFirebaseEmulators } from '@/lib/firebase'
 import { useStores } from '@/features/stores/use-stores'
-import {
-  SelectedStoreDetails,
-  StorePanel,
-  StorePanelFeedback,
-} from '@/features/stores/store-panel'
+import { SelectedStoreDetails, StorePanel } from '@/features/stores/store-panel'
 import { StoreMarkers } from '@/features/stores/store-markers'
 import type { Store } from '@/features/stores/store-schema'
 import { useAdmin } from '@/features/auth/admin-provider'
@@ -90,11 +79,17 @@ import {
 import {
   areaCenter,
   isViewport,
+  MAX_NEARBY_RADIUS_METERS,
   pointDistance,
+  viewportSearchRadius,
   type MapViewport,
   type SearchArea,
 } from './search-area'
 import { useViewportSearch } from './use-viewport-search'
+import {
+  useMapNotice,
+  useMapSearchNotifications,
+} from './use-map-notifications'
 
 import { useNearbyPlaces, type ConveniencePlace } from '../places/nearby-places'
 import { usePlaceLinks } from '../places/place-links'
@@ -147,9 +142,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
   const [zoomPaused, setZoomPaused] = useState(false)
   const searchSuspended = useRef(placesConfig.autoSearch)
   const searchEpoch = useRef(0)
-  const [area, setArea] = useState<
-    'initial' | 'location' | 'map' | 'destination'
-  >('initial')
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_SEARCH_FILTERS)
   const [destination, setDestination] = useState<
     (SearchDestination & { requestId: number }) | null
@@ -195,7 +187,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
   const links = usePlaceLinks(
     places.places,
     places.requestId,
-    placesConfig.autoSearch && (suspended || places.status === 'loading'),
+    suspended || places.status === 'loading',
   )
   const storesQuery = useStores(searchTarget, suspended)
   const admin = useAdmin()
@@ -208,7 +200,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
   } | null>(null)
   const [preparingRequest, setPreparingRequest] = useState(false)
   const requestPreparation = useRef<AbortController | null>(null)
-  const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const mobileScrollRef = useRef<HTMLDivElement>(null)
   const listScrollTop = useRef(0)
@@ -301,6 +292,22 @@ function MapPageContent({ config }: { config: MapConfig }) {
   }
   const search = places.search
   const cancel = places.cancel
+  const viewportSearch = isViewport(searchTarget)
+  const retryPlaces = useCallback(() => {
+    if (searchSuspended.current) return
+    if (viewportSearch) void search(searchTarget, placesConfig)
+    else void search(searchTarget)
+  }, [placesConfig, search, searchTarget, viewportSearch])
+  useMapNotice('error', firebaseConnection.error)
+  useMapSearchNotifications({
+    stores: storesQuery,
+    places,
+    registrationError: links.isError,
+    searchPaused: zoomPaused,
+    searchSuspended: suspended,
+    viewportSearch,
+    onRetryPlaces: retryPlaces,
+  })
   const suspendSearch = useCallback(
     (paused: boolean | null) => {
       searchSuspended.current = paused !== null
@@ -311,51 +318,24 @@ function MapPageContent({ config }: { config: MapConfig }) {
     },
     [cancel, setSuspended, setZoomPaused],
   )
-  const searchArea = useCallback(
-    (
-      target: SearchArea,
-      source: 'initial' | 'location' | 'map' | 'destination',
-    ) => {
+  const searchViewport = useCallback(
+    (viewport: MapViewport) => {
+      const singleRequest =
+        !placesConfig.autoSearch ||
+        !placesConfig.expandedSearch ||
+        placesConfig.maxRequests === 1
+      const target = singleRequest
+        ? { ...viewport, radiusMeters: viewportSearchRadius(viewport) }
+        : viewport
       searchSuspended.current = false
       searchEpoch.current += 1
       setSearchTarget(target)
       setSuspended(false)
       setZoomPaused(false)
-      setArea(source)
-      if (isViewport(target)) void search(target, placesConfig)
-      else {
-        setSelection(null)
-        void search(target)
-      }
+      if (!placesConfig.autoSearch) setSelection(null)
+      void search(target, placesConfig)
     },
-    [
-      search,
-      placesConfig,
-      setSearchTarget,
-      setSuspended,
-      setZoomPaused,
-      setArea,
-      setSelection,
-    ],
-  )
-  const located = useCallback(
-    (point: MapPoint) =>
-      placesConfig.autoSearch
-        ? setArea('location')
-        : searchArea(point, 'location'),
-    [searchArea, placesConfig.autoSearch, setArea],
-  )
-  const fallback = useCallback(
-    () =>
-      placesConfig.autoSearch
-        ? setArea('initial')
-        : searchArea(INITIAL_CENTER, 'initial'),
-    [searchArea, placesConfig.autoSearch, setArea],
-  )
-  const searchMap = (point: MapPoint) => searchArea(point, 'map')
-  const searchViewport = useCallback(
-    (viewport: MapViewport) => searchArea(viewport, 'map'),
-    [searchArea],
+    [search, placesConfig, setSuspended, setZoomPaused, setSelection],
   )
   function closeResultPanel() {
     setMobileListOpen(false)
@@ -368,9 +348,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
       ...point,
       requestId: (previous?.requestId ?? 0) + 1,
     }))
-    setArea('destination')
-    if (placesConfig.autoSearch) suspendSearch(false)
-    else searchArea(point.location, 'destination')
+    suspendSearch(false)
   }
   const clearFilters = () => setFilters(EMPTY_SEARCH_FILTERS)
   async function refreshRegistration() {
@@ -418,7 +396,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
             },
       })
     } catch {
-      setSaveNotice(
+      toast.error(
         usesFirebaseEmulators
           ? '登録の準備ができませんでした。Emulatorの接続を確認してください。'
           : '登録の準備ができませんでした。通信状態を確認してください。',
@@ -441,7 +419,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
     const controller = new AbortController()
     requestPreparation.current = controller
     setPreparingRequest(true)
-    setSaveNotice(null)
     try {
       const { store: current, baseUpdatedAt } = await readStoreForRequest(
         store.id,
@@ -465,7 +442,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
       })
     } catch {
       if (!controller.signal.aborted)
-        setSaveNotice(
+        toast.error(
           '修正申請の準備ができませんでした。通信状態と最新の店舗情報を確認し、「修正を申請」からもう一度お試しください。',
         )
     } finally {
@@ -477,16 +454,14 @@ function MapPageContent({ config }: { config: MapConfig }) {
   }
   async function requested() {
     setEditor(null)
-    setSaveNotice(
-      '申請を送信しました。管理者が承認した後に店舗情報へ反映されます。',
-    )
+    toast.success('申請を送信しました。')
   }
   async function saved(id: string) {
     const { result, linked } = await refreshRegistration()
     setEditor(null)
     if (result.isError || linked?.isError) {
       setSelection(null)
-      setSaveNotice(
+      toast.warning(
         '保存しました。一覧の再取得に失敗したため、更新ボタンで確認してください。',
       )
     } else if (
@@ -494,10 +469,10 @@ function MapPageContent({ config }: { config: MapConfig }) {
       Object.values(linked?.data ?? {}).some((store) => store?.id === id)
     ) {
       setSelection({ kind: 'store', id })
-      setSaveNotice('店舗情報を保存しました。')
+      toast.success('店舗情報を保存しました。')
     } else {
       setSelection(null)
-      setSaveNotice(
+      toast.success(
         '保存しました。検索範囲・取得上限により一覧には表示されていません。',
       )
     }
@@ -517,46 +492,11 @@ function MapPageContent({ config }: { config: MapConfig }) {
         onRegister={() => createStore(selectedEntry.place!)}
       />
     ) : null
-  const feedbackProps = {
-    query: storesQuery,
-    entries: allEntries,
-    placesStatus: places.status,
-    searchPaused: zoomPaused,
-    searchSuspended: suspended,
-    viewportSearch: placesConfig.autoSearch,
-    placesLimited: placesConfig.autoSearch && places.limited,
-    placesPartialError: placesConfig.autoSearch && places.partialError,
-    registrationError: links.isError,
-    onRetryPlaces: () => {
-      if (suspended) return
-      if (isViewport(searchTarget)) void search(searchTarget, placesConfig)
-      else void search(searchTarget)
-    },
-  }
-  const notices = (
-    <>
-      {firebaseConnection.error && (
-        <Alert className="mb-4" variant="destructive">
-          <AlertDescription>{firebaseConnection.error}</AlertDescription>
-        </Alert>
-      )}
-      {saveNotice && (
-        <p role="status" className="mb-4 text-sm leading-6 text-primary">
-          {saveNotice}
-        </p>
-      )}
-    </>
-  )
-
-  const areaLabel = placesConfig.autoSearch
-    ? '地図の表示範囲・中心から近い順'
-    : area === 'location'
-      ? '現在地から半径3km・近い順'
-      : area === 'destination' && destination
-        ? `${destination.label}から半径3km・近い順`
-        : area === 'map'
-          ? '検索した地点から半径3km・近い順'
-          : '東京駅から半径3km・近い順'
+  const areaLabel = viewportSearch
+    ? searchTarget.radiusMeters === MAX_NEARBY_RADIUS_METERS
+      ? '地図の中心から半径50km・近い順'
+      : '地図の表示範囲・中心から近い順'
+    : '東京駅から半径3km・近い順'
   const selectedContent =
     pointContent ??
     (selectedStore && (
@@ -569,7 +509,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
     ))
   const resultPanel = (
     <StorePanel
-      {...feedbackProps}
+      query={storesQuery}
       entries={entries}
       unfilteredEntries={allEntries}
       hasFilters={hasFilters}
@@ -579,6 +519,12 @@ function MapPageContent({ config }: { config: MapConfig }) {
       onSelectPlace={selectPlace}
       onRefresh={() => void refreshRegistration()}
       registrationFetching={links.isFetching}
+      registrationError={links.isError}
+      searchSuspended={suspended}
+      viewportSearch={viewportSearch}
+      placesStatus={places.status}
+      placesPartialError={viewportSearch && places.partialError}
+      onRetryPlaces={retryPlaces}
       selectedStore={selectedStore}
       onSelectStore={selectStore}
       onEdit={onEdit}
@@ -639,10 +585,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
                     viewportRef={panelRef}
                     className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:max-h-[calc(var(--search-available-height,70dvh)-112px)]"
                   >
-                    <div className="px-7 pb-7 pt-0">
-                      {notices}
-                      {resultPanel}
-                    </div>
+                    <div className="px-7 pb-7 pt-0">{resultPanel}</div>
                   </ScrollArea>
                 </aside>
               )}
@@ -719,9 +662,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
               destination={destination}
               locationRequest={locationRequest}
               onControlsChange={setMapControls}
-              onLocated={located}
-              onLocationFallback={fallback}
-              onSearchArea={searchMap}
               onViewportSearch={searchViewport}
               onSuspendSearch={suspendSearch}
               placesConfig={placesConfig}
@@ -748,29 +688,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
               title="地図の設定が必要です"
               description=".envにVITE_GOOGLE_MAPS_API_KEYを設定し、開発サーバーを再起動してください。"
             />
-          )}
-          {isMobile && !mobileListOpen && !searchExpanded && !filterOpen && (
-            <div
-              className={`absolute right-3 left-3 z-10 grid max-h-[20svh] max-w-xs gap-2 overflow-y-auto overscroll-contain rounded-lg border bg-background/95 p-2 shadow-sm empty:hidden [&>*]:m-0 [&>p]:py-0 ${placesConfig.autoSearch ? 'top-[132px]' : 'top-[196px]'}`}
-            >
-              {notices}
-              <StorePanelFeedback {...feedbackProps} />
-              {(storesQuery.isError || links.isError) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    !storesQuery.enabled ||
-                    storesQuery.isFetching ||
-                    links.isFetching ||
-                    suspended
-                  }
-                  onClick={() => void refreshRegistration()}
-                >
-                  店舗情報を再取得
-                </Button>
-              )}
-            </div>
           )}
         </section>
       </main>
@@ -821,14 +738,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
                   listScrollTop.current = event.currentTarget.scrollTop
               }}
             >
-              {!selection ? (
-                <>
-                  {notices}
-                  {resultPanel}
-                </>
-              ) : (
-                selectedContent
-              )}
+              {selection ? selectedContent : resultPanel}
             </div>
           </SheetContent>
         </Sheet>
@@ -854,9 +764,6 @@ function MapCanvas({
   destination,
   locationRequest,
   onControlsChange,
-  onLocated,
-  onLocationFallback,
-  onSearchArea,
   onViewportSearch,
   onSuspendSearch,
   placesConfig,
@@ -876,9 +783,6 @@ function MapCanvas({
   destination: (SearchDestination & { requestId: number }) | null
   locationRequest: number
   onControlsChange: (controls: { ready: boolean; locating: boolean }) => void
-  onLocated: (point: MapPoint) => void
-  onLocationFallback: () => void
-  onSearchArea: (point: MapPoint) => void
   onViewportSearch: (viewport: MapViewport) => void
   onSuspendSearch: (paused: boolean | null) => void
   placesConfig: PlacesConfig
@@ -914,7 +818,7 @@ function MapCanvas({
   const [locating, setLocating] = useState(false)
   const [locationResolved, setLocationResolved] = useState(false)
   const [location, setLocation] = useState<MapPoint | null>(null)
-  const [locationError, setLocationError] = useState<string | null>(null)
+  const locationNotice = useRef<ReturnType<typeof toast.warning>>(undefined)
   const mounted = useRef(false)
   const initialLocationRequested = useRef(false)
   const locationIntent = useRef(0)
@@ -930,9 +834,7 @@ function MapCanvas({
   const focusId = selectedStore?.id ?? selectedPlace?.key
   const focusLat = selectedStore?.location.lat ?? selectedPlace?.location.lat
   const focusLng = selectedStore?.location.lng ?? selectedPlace?.location.lng
-  const initialSearchDone = useRef(false)
   const locatingRef = useRef(false)
-  const [mapCenter, setMapCenter] = useState(INITIAL_CENTER)
   const searchGuard = useRef(false)
   const adminLoginClicks = useRef<{ at: number; count: number } | null>(null)
   const adminLoginOpening = useRef(false)
@@ -966,7 +868,7 @@ function MapCanvas({
 
   const viewportSearch = useViewportSearch({
     map,
-    enabled: placesConfig.autoSearch,
+    autoSearch: placesConfig.autoSearch,
     ready: ready && locationResolved && !locating,
     minZoom: placesConfig.minZoom,
     onSearch: onViewportSearch,
@@ -987,13 +889,15 @@ function MapCanvas({
     // 遅れて返る初回位置情報は、利用者が選んだ目的地を上書きしない。
     locationIntent.current += 1
     locatingRef.current = false
-    initialSearchDone.current = true
     initialLocationRequested.current = true
     setLocating(false)
     setLocationResolved(true)
-    setLocationError(null)
-    preparePan()
-    const zoom = Math.max(15, placesConfig.minZoom ?? 13)
+    if (locationNotice.current !== undefined) {
+      toast.dismiss(locationNotice.current)
+      locationNotice.current = undefined
+    }
+    const zoom = Math.max(15, placesConfig.minZoom)
+    preparePan(destination.location, zoom)
     const currentCenter = map.getCenter()?.toJSON()
     const unchanged =
       currentCenter &&
@@ -1011,14 +915,6 @@ function MapCanvas({
     onViewportIdle,
     placesConfig.minZoom,
   ])
-  const fallbackIfNeeded = useCallback(() => {
-    if (!initialSearchDone.current) {
-      initialSearchDone.current = true
-      setLocationResolved(true)
-      onLocationFallback()
-    }
-  }, [onLocationFallback])
-
   useEffect(() => {
     if (!focusId) {
       focusedSelection.current = null
@@ -1041,6 +937,10 @@ function MapCanvas({
     mounted.current = true
     return () => {
       mounted.current = false
+      if (locationNotice.current !== undefined) {
+        toast.dismiss(locationNotice.current)
+        locationNotice.current = undefined
+      }
     }
   }, [])
 
@@ -1052,12 +952,15 @@ function MapCanvas({
 
   const locate = useCallback(() => {
     if (!map || !ready || locatingRef.current) return
-    setLocationError(null)
+    if (locationNotice.current !== undefined) {
+      toast.dismiss(locationNotice.current)
+      locationNotice.current = undefined
+    }
     if (!navigator.geolocation) {
-      setLocationError(
+      locationNotice.current = toast.warning(
         'このブラウザでは現在地を取得できません。地図を移動して「この周辺を検索」を押してください。',
       )
-      fallbackIfNeeded()
+      setLocationResolved(true)
       return
     }
     locatingRef.current = true
@@ -1069,38 +972,36 @@ function MapCanvas({
         const point = { lat: coords.latitude, lng: coords.longitude }
         if (intent !== locationIntent.current) return
         setLocation(point)
-        initialSearchDone.current = true
         setLocationResolved(true)
-        preparePan()
-        onLocated(point)
         locatingRef.current = false
         setLocating(false)
-        currentMap.current?.panTo(point)
-        currentMap.current?.setZoom(
-          Math.max(
-            currentMap.current.getZoom() ?? 15,
-            15,
-            placesConfig.minZoom ?? 13,
-          ),
+        const activeMap = currentMap.current
+        if (!activeMap) return
+        const zoom = Math.max(
+          activeMap.getZoom() ?? 15,
+          15,
+          placesConfig.minZoom,
         )
+        const center = activeMap.getCenter()?.toJSON()
+        const unchanged =
+          center &&
+          pointDistance(center, point) < 0.01 &&
+          activeMap.getZoom() === zoom
+        preparePan(point, zoom)
+        activeMap.panTo(point)
+        activeMap.setZoom(zoom)
+        if (unchanged) onViewportIdle()
       },
       (error) => {
         if (!mounted.current || intent !== locationIntent.current) return
         locatingRef.current = false
         setLocating(false)
-        setLocationError(locationErrorMessage(error.code))
-        fallbackIfNeeded()
+        locationNotice.current = toast.warning(locationErrorMessage(error.code))
+        setLocationResolved(true)
       },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     )
-  }, [
-    map,
-    ready,
-    onLocated,
-    fallbackIfNeeded,
-    preparePan,
-    placesConfig.minZoom,
-  ])
+  }, [map, ready, preparePan, onViewportIdle, placesConfig.minZoom])
 
   useEffect(() => {
     if (locationRequest === handledLocationRequest.current || !ready) return
@@ -1158,7 +1059,6 @@ function MapCanvas({
           locationIntent.current += 1
           if (locatingRef.current) {
             locatingRef.current = false
-            initialSearchDone.current = true
             setLocating(false)
             setLocationResolved(true)
           }
@@ -1172,6 +1072,8 @@ function MapCanvas({
         disableDoubleClickZoom={false}
         disableDefaultUI
         cameraControl={false}
+        headingInteractionEnabled={false}
+        tiltInteractionEnabled={false}
         mapTypeControl={false}
         streetViewControl={false}
         fullscreenControl={false}
@@ -1180,11 +1082,7 @@ function MapCanvas({
           renderedMaps.add(map)
           setTilesReady(true)
         }}
-        onIdle={() => {
-          const center = map?.getCenter()
-          if (center) setMapCenter(center.toJSON())
-          viewportSearch.onIdle()
-        }}
+        onIdle={onViewportIdle}
         aria-label="周辺の地図"
         style={{ width: '100%', height: '100%' }}
       >
@@ -1236,7 +1134,7 @@ function MapCanvas({
           onClick={() => {
             if (searchGuard.current) return
             searchGuard.current = true
-            onSearchArea(map?.getCenter()?.toJSON() ?? mapCenter)
+            viewportSearch.searchNow()
             queueMicrotask(() => {
               searchGuard.current = false
             })
@@ -1244,23 +1142,6 @@ function MapCanvas({
         >
           {searching ? 'コンビニを検索中' : 'この周辺を検索'}
         </Button>
-      )}
-      {locationError && (
-        <Alert className="map-panel-enter absolute right-4 bottom-24 left-4 w-auto max-w-md p-4 shadow-sm sm:bottom-20">
-          <CircleAlert aria-hidden="true" />
-          <AlertDescription>{locationError}</AlertDescription>
-          <AlertAction>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="-mt-1 -mr-1 shrink-0"
-              aria-label="位置情報の案内を閉じる"
-              onClick={() => setLocationError(null)}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          </AlertAction>
-        </Alert>
       )}
     </>
   )

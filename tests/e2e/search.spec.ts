@@ -78,7 +78,7 @@ async function setup(page: Page) {
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
-      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 100, maxRequests: 9 }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
+      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 20, maxRequests: 1 }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
     }),
   )
   await page.route('**/src/features/stores/use-stores.ts', (route) =>
@@ -265,10 +265,10 @@ test('750ms後の場所候補から遠方を検索し、設備ORとチェーン�
   await expect
     .poll(() => readState(page).then((state) => state.nearbyCalls.length))
     .toBe(2)
-  expect((await readState(page)).nearbyCalls[1]).toEqual({
-    center: destination,
-    radius: 3000,
-  })
+  const nearbyArea = (await readState(page)).nearbyCalls[1]
+  expect(nearbyArea.center).toEqual(destination)
+  expect(nearbyArea.radius).toBeGreaterThan(900)
+  expect(nearbyArea.radius).toBeLessThan(950)
 
   if (mobile) await input.focus()
   await page.getByRole('button', { name: '設備', exact: true }).click()
@@ -309,7 +309,7 @@ test('750ms後の場所候補から遠方を検索し、設備ORとチェーン�
     ].sort(),
   )
   await expect(list.getByText(/検索地点から約.*直線距離/)).toHaveCount(3)
-  await expect(page.getByText('大阪駅から半径3km・近い順')).toBeAttached()
+  await expect(page.getByText('地図の表示範囲・中心から近い順')).toBeAttached()
 
   await page.getByRole('button', { name: /テーマを変更/ }).click()
   await page.getByRole('menuitemradio', { name: 'ダーク' }).click()
