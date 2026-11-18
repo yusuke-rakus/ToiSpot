@@ -10,11 +10,13 @@ import {
   containsPoint,
   coveringRadius,
   isViewport,
+  MAX_NEARBY_RADIUS_METERS,
   pointDistance,
   searchAreaKey,
   splitBounds,
   validPoint,
   validViewport,
+  viewportSearchRadius,
   type MapBounds,
   type MapViewport,
   type SearchArea,
@@ -43,6 +45,7 @@ function nearbyRequest(
   center: MapPoint,
   radius: number,
   signal?: AbortSignal,
+  maxResultCount = PLACE_DISPLAY_LIMIT,
 ): Promise<google.maps.places.Place[]> {
   return new Promise((resolve, reject) => {
     const abort = () => {
@@ -74,12 +77,12 @@ function nearbyRequest(
             includedTypes: ['convenience_store'],
             locationRestriction: { center, radius },
             rankPreference: 'DISTANCE',
-            maxResultCount: PLACE_DISPLAY_LIMIT,
+            maxResultCount,
             language: 'ja',
             region: 'jp',
           })
           signal?.throwIfAborted()
-          resolve(result.places.slice(0, PLACE_DISPLAY_LIMIT))
+          resolve(result.places.slice(0, maxResultCount))
         } catch (error) {
           reject(error)
         } finally {
@@ -145,6 +148,22 @@ export async function searchViewportPlaces(
   const maxResults = config.expandedSearch
     ? config.maxResults
     : PLACE_DISPLAY_LIMIT
+  if (viewport.radiusMeters !== undefined || maxRequests === 1) {
+    const limit = Math.min(config.maxResults, PLACE_DISPLAY_LIMIT)
+    const places = await nearbyRequest(
+      viewport.center,
+      viewport.radiusMeters ?? viewportSearchRadius(viewport),
+      signal,
+      limit,
+    )
+    return {
+      places: normalizePlaces(places).filter(({ location }) =>
+        containsPoint(viewport.bounds, location),
+      ),
+      limited: places.length >= limit,
+      partialError: false,
+    }
+  }
   type Cell = { bounds: MapBounds; depth: number; center: MapPoint }
   const queue: Cell[] = [
     { bounds: viewport.bounds, center: viewport.center, depth: 0 },
@@ -167,7 +186,7 @@ export async function searchViewportPlaces(
     while (queue.length && batch.length < Math.min(2, maxRequests - issued)) {
       const cell = queue.shift()!
       const radius = coveringRadius(cell.bounds, cell.center)
-      if (radius > 50_000) {
+      if (radius > MAX_NEARBY_RADIUS_METERS) {
         // 巨大な表示範囲も、実際に検索するセルだけを遅延分割する。
         if (cell.depth < 24) queue.unshift(...children(cell))
         else limited = true

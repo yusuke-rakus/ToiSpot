@@ -11,9 +11,11 @@ export type MapViewport = {
   center: MapPoint
   bounds: MapBounds
   zoom: number
+  radiusMeters?: number
 }
 // 中心だけの指定は従来の半径3km検索。
 export type SearchArea = MapPoint | MapViewport
+export const MAX_NEARBY_RADIUS_METERS = 50_000
 
 export function isViewport(area: SearchArea): area is MapViewport {
   return 'bounds' in area
@@ -34,13 +36,18 @@ export function validPoint(point: MapPoint) {
 
 export function validViewport(view: MapViewport) {
   const { north, south, east, west } = view.bounds
+  const width = longitudeWidth(view.bounds)
+  const centerOffset = (view.center.lng - west + 360) % 360
   return (
     validPoint(view.center) &&
     Number.isFinite(view.zoom) &&
     validPoint({ lat: north, lng: east }) &&
     validPoint({ lat: south, lng: west }) &&
-    north > south &&
-    longitudeWidth(view.bounds) > 0
+    view.center.lat > south &&
+    view.center.lat < north &&
+    (width === 360 || (centerOffset > 0 && centerOffset < width)) &&
+    (view.radiusMeters === undefined ||
+      (view.radiusMeters > 0 && view.radiusMeters <= MAX_NEARBY_RADIUS_METERS))
   )
 }
 
@@ -88,6 +95,34 @@ export function coveringRadius(
   )
 }
 
+export function viewportSearchRadius({ bounds, center }: MapViewport) {
+  const radiansPerDegree = Math.PI / 180
+  const latitude = center.lat * radiansPerDegree
+  const distanceToMeridian = (lng: number) => {
+    const longitudeCosine = Math.cos((lng - center.lng) * radiansPerDegree)
+    // 経度差が90度以上なら、極に達する前に北端か南端に達する。
+    if (longitudeCosine < 0) return Infinity
+    // 東西の辺への最短点は、地図の中心と同じ緯度とは限らない。
+    const lat =
+      Math.atan2(Math.sin(latitude), Math.cos(latitude) * longitudeCosine) /
+      radiansPerDegree
+    return pointDistance(center, { lat, lng })
+  }
+  const distanceToSide =
+    longitudeWidth(bounds) === 360
+      ? Infinity
+      : Math.min(
+          distanceToMeridian(bounds.west),
+          distanceToMeridian(bounds.east),
+        )
+  return Math.min(
+    MAX_NEARBY_RADIUS_METERS,
+    pointDistance(center, { lat: bounds.north, lng: center.lng }),
+    pointDistance(center, { lat: bounds.south, lng: center.lng }),
+    distanceToSide,
+  )
+}
+
 export function splitBounds(bounds: MapBounds, origin: MapPoint): MapBounds[] {
   const middle = boundsCenter(bounds)
   return [
@@ -118,6 +153,7 @@ export function searchAreaKey(area: SearchArea) {
           area.bounds.west,
         ].map(coordinate),
         area.zoom.toFixed(3),
+        area.radiusMeters?.toFixed(2),
       ].join(':')
     : ['radius', coordinate(center.lat), coordinate(center.lng), 3000].join(':')
 }

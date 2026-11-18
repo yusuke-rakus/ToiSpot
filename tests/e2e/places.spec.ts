@@ -33,7 +33,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
-      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 100, maxRequests: 9 }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
+      body: `export const INITIAL_CENTER = { lat: 35.681236, lng: 139.767125 }; export const INITIAL_ZOOM = 14; export const DEFAULT_PLACES_CONFIG = { autoSearch: false, expandedSearch: true, minZoom: 13, maxResults: 20, maxRequests: 1 }; export function getMapConfig() { return { apiKey: 'test-key-not-real', mapId: 'DEMO_MAP_ID' } } export function locationErrorMessage() { return '現在地を取得できませんでした' }`,
     }),
   )
   await page.route('**/src/features/stores/use-stores.ts', (route) =>
@@ -63,7 +63,11 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
       maps: {
         importLibrary: async () => ({
           Place: {
-            searchNearby: async () => {
+            searchNearby: async ({
+              locationRestriction: { center },
+            }: {
+              locationRestriction: { center: { lat: number; lng: number } }
+            }) => {
               state.nearbyCalls += 1
               return {
                 places: [
@@ -71,7 +75,12 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
                     id: 'ChIJ_mock',
                     displayName: 'ローソン テスト店',
                     formattedAddress: 'Googleから取得した住所',
-                    location: { toJSON: () => ({ lat: 35.678, lng: 139.78 }) },
+                    location: {
+                      toJSON: () => ({
+                        lat: center.lat + 0.001,
+                        lng: center.lng + 0.001,
+                      }),
+                    },
                     attributions: [],
                   },
                 ],
@@ -187,7 +196,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   if (mobile) await expect(sheet).toHaveCount(0)
   else
     await expect(
-      page.getByText('検索した地点から半径3km・近い順'),
+      page.getByText('地図の表示範囲・中心から近い順'),
     ).toBeAttached()
   await expect(pin).toBeVisible()
   expect(
@@ -245,7 +254,7 @@ test('店舗一覧をパネル内でスクロールし、詳細と一覧への�
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
-      body: `export const INITIAL_CENTER = {lat:35.681236,lng:139.767125}; export const INITIAL_ZOOM=14; export const DEFAULT_PLACES_CONFIG={autoSearch:false,expandedSearch:true,minZoom:13,maxResults:100,maxRequests:9}; export function getMapConfig(){return {apiKey:'test-key-not-real',mapId:'DEMO_MAP_ID'}} export function locationErrorMessage(){return '現在地を取得できませんでした'}`,
+      body: `export const INITIAL_CENTER = {lat:35.681236,lng:139.767125}; export const INITIAL_ZOOM=14; export const DEFAULT_PLACES_CONFIG={autoSearch:false,expandedSearch:true,minZoom:13,maxResults:20,maxRequests:1}; export function getMapConfig(){return {apiKey:'test-key-not-real',mapId:'DEMO_MAP_ID'}} export function locationErrorMessage(){return '現在地を取得できませんでした'}`,
     }),
   )
   const stores = Array.from({ length: 15 }, (_, index) => ({

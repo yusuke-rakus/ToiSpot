@@ -17,7 +17,15 @@ export function Toaster() {
   }, [message])
   return (
     <Sonner
-      position="bottom-right"
+      position="bottom-center"
+      duration={5000}
+      expand
+      offset={{ bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))' }}
+      mobileOffset={{
+        left: 16,
+        right: 16,
+        bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+      }}
       closeButton
       containerAriaLabel="通知"
       toastOptions={{ closeButtonAriaLabel: '通知を閉じる' }}

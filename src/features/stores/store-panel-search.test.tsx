@@ -70,9 +70,10 @@ describe('検索結果の店舗一覧', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('条件一致なしと取得失敗を区別し、元の結果を根拠に前回取得の案内を保つ', async () => {
+  it('条件に一致する結果がなくても検索を再試行できる', async () => {
     const user = userEvent.setup()
     const onClearFilters = vi.fn()
+    const onRetryPlaces = vi.fn()
     render(
       <StorePanel
         {...props({
@@ -80,27 +81,18 @@ describe('検索結果の店舗一覧', () => {
           unfilteredEntries: [registered, unregistered],
           hasFilters: true,
           onClearFilters,
+          onRetryPlaces,
           placesStatus: 'error',
-          viewportSearch: true,
-          placesLimited: true,
         })}
       />,
     )
     expect(
       screen.getByText('取得できた店舗に、条件に一致する店舗はありません。'),
     ).toBeVisible()
-    expect(screen.getByText('コンビニを検索できませんでした。')).toBeVisible()
-    expect(
-      screen.getByText('前回取得したコンビニを表示しています。'),
-    ).toBeVisible()
-    expect(
-      screen.getByText(
-        '取得上限に達したため、一部のコンビニを表示しています。',
-      ),
-    ).toBeVisible()
-    expect(
-      screen.queryByText('周辺にコンビニが見つかりません。'),
-    ).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: 'コンビニ検索を再試行' }),
+    )
+    expect(onRetryPlaces).toHaveBeenCalledOnce()
     await user.click(screen.getByRole('button', { name: '検索条件を解除' }))
     expect(onClearFilters).toHaveBeenCalledOnce()
   })

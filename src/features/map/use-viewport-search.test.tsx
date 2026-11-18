@@ -24,7 +24,7 @@ function setup(ready = true) {
       useViewportSearch({
         map,
         ready,
-        enabled: true,
+        autoSearch: true,
         minZoom: 13,
         onSearch,
         onSuspend,

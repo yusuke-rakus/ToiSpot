@@ -96,6 +96,9 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   const pins = page.getByRole('button', { name: /・データなし$/ })
   const results = mobile ? pins : list.locator('li')
   const sheet = page.getByRole('dialog', { name: 'トイレ情報' })
+  const notifications = page.getByRole('region', { name: /^通知/ })
+  const pauseNotice =
+    notifications.getByText('地図を拡大すると検索を再開します')
   await expect(results).toHaveCount(100)
   expect(await callCount(page)).toBe(5)
   if (!mobile) {
@@ -125,7 +128,25 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   await page.waitForTimeout(400)
   expect(await callCount(page)).toBe(10)
   await page.getByRole('button', { name: '地図を縮小' }).click()
-  await expect(page.getByText('地図を拡大すると検索を再開します')).toBeVisible()
+  await expect(pauseNotice).toBeVisible()
+  await expect
+    .poll(() =>
+      pauseNotice.evaluate((message) => {
+        const bounds = message
+          .closest('[data-sonner-toast]')
+          ?.getBoundingClientRect()
+        return bounds
+          ? {
+              centered:
+                Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 2,
+              nearBottom:
+                innerHeight - bounds.bottom >= 0 &&
+                innerHeight - bounds.bottom <= 48,
+            }
+          : null
+      }),
+    )
+    .toEqual({ centered: true, nearBottom: true })
   await expect(
     page.getByRole('button', { name: 'この周辺を検索' }),
   ).toHaveCount(0)
@@ -144,9 +165,7 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   })
   await page.getByRole('button', { name: '地図を拡大' }).click()
   await expect.poll(() => callCount(page)).toBe(15)
-  await expect(page.getByText('地図を拡大すると検索を再開します')).toHaveCount(
-    0,
-  )
+  await expect(pauseNotice).toHaveCount(0)
   await expect(results).toHaveCount(100)
   if (mobile) await expect(sheet).toHaveCount(0)
   const sameArea = await page.evaluate(() => {
@@ -168,6 +187,11 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
     ),
   ).toBe(true)
   expect(externalRequests).toEqual([])
+  await expect(
+    notifications.getByText(
+      '取得上限に達したため、一部のコンビニを表示しています。',
+    ),
+  ).toHaveCount(0)
 })
 
 test('自動取得を有効にしたまま分割取得だけ無効化できる', async ({
