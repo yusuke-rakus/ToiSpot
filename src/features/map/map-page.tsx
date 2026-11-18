@@ -544,13 +544,6 @@ function MapPageContent({ config }: { config: MapConfig }) {
           className="absolute inset-0 isolate overflow-hidden bg-muted"
         >
           <div
-            role="group"
-            aria-label="マップのアプリ操作"
-            className={`absolute ${placesConfig.autoSearch ? 'top-[72px]' : 'top-[128px]'} right-3 z-10 lg:top-4 lg:right-4 lg:z-30`}
-          >
-            <AppHeaderActions />
-          </div>
-          <div
             ref={floatingSearchRef}
             className={`pointer-events-auto absolute top-3 left-1/2 ${searchExpanded || filterOpen ? 'z-40' : 'z-20'} w-[calc(100%-24px)] max-w-md -translate-x-1/2 lg:top-4 lg:left-4 lg:w-96 lg:max-w-none lg:translate-x-0`}
             aria-label="場所検索と絞り込み"
@@ -684,10 +677,13 @@ function MapPageContent({ config }: { config: MapConfig }) {
               }
             />
           ) : (
-            <MapNotice
-              title="地図の設定が必要です"
-              description=".envにVITE_GOOGLE_MAPS_API_KEYを設定し、開発サーバーを再起動してください。"
-            />
+            <>
+              <MapTopControls />
+              <MapNotice
+                title="地図の設定が必要です"
+                description=".envにVITE_GOOGLE_MAPS_API_KEYを設定し、開発サーバーを再起動してください。"
+              />
+            </>
           )}
         </section>
       </main>
@@ -1017,17 +1013,20 @@ function MapCanvas({
 
   if (failed) {
     return (
-      <MapNotice
-        title={
-          authFailure ? '地図を利用できません' : '地図を読み込めませんでした'
-        }
-        description={
-          authFailure
-            ? 'APIキーの有効性、Maps JavaScript APIの有効化、アクセス元の制限を確認してください。'
-            : '通信状態やブラウザの設定を確認して、もう一度お試しください。'
-        }
-        action={<ReloadButton />}
-      />
+      <>
+        <MapTopControls />
+        <MapNotice
+          title={
+            authFailure ? '地図を利用できません' : '地図を読み込めませんでした'
+          }
+          description={
+            authFailure
+              ? 'APIキーの有効性、Maps JavaScript APIの有効化、アクセス元の制限を確認してください。'
+              : '通信状態やブラウザの設定を確認して、もう一度お試しください。'
+          }
+          action={<ReloadButton />}
+        />
+      </>
     )
   }
 
@@ -1126,24 +1125,41 @@ function MapCanvas({
         </div>
       )}
 
-      {!placesConfig.autoSearch && !hideSearchAction && (
-        <Button
-          variant="outline"
-          className="absolute top-[72px] left-1/2 z-10 h-8 -translate-x-1/2 rounded-xl bg-background shadow-sm lg:top-4"
-          disabled={!ready || locating || searching}
-          onClick={() => {
-            if (searchGuard.current) return
-            searchGuard.current = true
-            viewportSearch.searchNow()
-            queueMicrotask(() => {
-              searchGuard.current = false
-            })
-          }}
-        >
-          {searching ? 'コンビニを検索中' : 'この周辺を検索'}
-        </Button>
-      )}
+      <MapTopControls>
+        {!placesConfig.autoSearch && !hideSearchAction && (
+          <Button
+            variant="outline"
+            className="pointer-events-auto h-8 rounded-xl bg-background shadow-sm transition max-[360px]:px-1.5 max-[360px]:text-xs"
+            disabled={!ready || locating || searching}
+            onClick={() => {
+              if (searchGuard.current) return
+              searchGuard.current = true
+              viewportSearch.searchNow()
+              queueMicrotask(() => {
+                searchGuard.current = false
+              })
+            }}
+          >
+            {searching ? 'コンビニを検索中' : 'この周辺を検索'}
+          </Button>
+        )}
+      </MapTopControls>
     </>
+  )
+}
+
+function MapTopControls({ children }: { children?: ReactNode }) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[68px] z-10 flex h-10 items-center justify-center lg:top-3 lg:z-30">
+      {children}
+      <div
+        role="group"
+        aria-label="マップのアプリ操作"
+        className="pointer-events-auto absolute right-3 max-[360px]:right-2 lg:right-4"
+      >
+        <AppHeaderActions glass />
+      </div>
+    </div>
   )
 }
 

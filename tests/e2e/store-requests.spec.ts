@@ -175,7 +175,36 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
     sessionStorage.setItem('test-admin', 'true')
     window.dispatchEvent(new Event('test-admin-session'))
   })
-  await page.getByRole('link', { name: /申請一覧.*2件/ }).click()
+  const actions = page.getByRole('group', { name: 'マップのアプリ操作' })
+  const bell = actions.getByRole('link', { name: /申請一覧.*2件/ })
+  const nearby = page.getByRole('button', { name: 'この周辺を検索' })
+  await expect(
+    actions.getByRole('button', { name: /テーマを変更/ }),
+  ).toBeVisible()
+  await expect(
+    actions.getByRole('button', { name: 'ログアウト' }),
+  ).toBeVisible()
+  await expect(bell).toBeVisible()
+  await expect(nearby).toBeEnabled()
+  await expect(
+    actions.locator('[data-slot="glass-surface-backdrop"]'),
+  ).toHaveCSS('backdrop-filter', /^url\(/)
+  const viewport = page.viewportSize()!
+  for (const width of testInfo.project.name === 'mobile'
+    ? [375, 320]
+    : [viewport.width]) {
+    await page.setViewportSize({ ...viewport, width })
+    const groupBox = (await actions.boundingBox())!
+    const searchBox = (await nearby.boundingBox())!
+    expect(searchBox.x + searchBox.width / 2).toBeCloseTo(width / 2, 0)
+    expect(groupBox.y + groupBox.height / 2).toBeCloseTo(
+      searchBox.y + searchBox.height / 2,
+      0,
+    )
+    expect(groupBox.x).toBeGreaterThan(searchBox.x + searchBox.width)
+  }
+  await page.setViewportSize(viewport)
+  await bell.click()
   await expect(page).toHaveURL('/admin/store-requests')
   await expect(
     page.getByRole('heading', { name: '登録・修正申請' }),

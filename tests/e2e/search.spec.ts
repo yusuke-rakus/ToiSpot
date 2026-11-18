@@ -410,9 +410,11 @@ test('検索パネルが地図上に浮き、スマホのフォーカスと条�
       10,
     )
     expect(nearbyBox.y - (panelBox.y + panelBox.height)).toBeLessThanOrEqual(14)
-    expect(actions.y).toBeGreaterThanOrEqual(
-      nearbyBox.y + nearbyBox.height + 10,
+    expect(actions.y + actions.height / 2).toBeCloseTo(
+      nearbyBox.y + nearbyBox.height / 2,
+      0,
     )
+    expect(actions.x).toBeGreaterThan(nearbyBox.x + nearbyBox.width)
     expect(
       Math.abs(panelBox.x + panelBox.width / 2 - (mapBox.x + mapBox.width / 2)),
     ).toBeLessThan(2)
