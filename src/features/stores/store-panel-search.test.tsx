@@ -39,8 +39,7 @@ function props(overrides: Partial<Props> = {}): Props {
       isFetching: false,
       isError: false,
     } as Props['query'],
-    selectedStore: null,
-    pointContent: null,
+    selectedContent: null,
     entries: [registered, unregistered],
     placesStatus: 'success',
     onSelectStore: vi.fn(),
@@ -62,6 +61,12 @@ describe('検索結果の店舗一覧', () => {
     expect(screen.getByText('東京都千代田区')).toBeVisible()
     expect(screen.getAllByText('検索地点から約0m（直線距離）')).toHaveLength(2)
     expect(screen.getByText('データなし')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: `${store.name}の詳細を見る` }),
+    ).toHaveAccessibleDescription('利用可 検索地点から約0m（直線距離）')
+    expect(
+      screen.getByRole('button', { name: `${unregistered.name}の詳細を見る` }),
+    ).toHaveAccessibleDescription('データなし 検索地点から約0m（直線距離）')
     expect(
       screen.queryByRole('heading', { name: 'トイレ情報' }),
     ).not.toBeInTheDocument()

@@ -348,7 +348,11 @@ test('周辺一覧から詳細へ進み、一覧アイコンと地図操作で�
     : 0
   if (mobile) expect(previousScroll).toBeGreaterThan(0)
   const label = await lastRow.getAttribute('aria-label')
+  await expect(lastRow).toHaveAccessibleDescription(/直線距離/)
   await lastRow.click()
+  await expect(
+    page.getByRole('link', { name: 'Google マップで経路を見る' }),
+  ).toBeVisible()
   if (mobile) await expect(page.getByRole('dialog')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '一覧へ戻る' })).toHaveCount(0)
   if (mobile) {
