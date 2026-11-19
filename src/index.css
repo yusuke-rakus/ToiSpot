@@ -98,7 +98,18 @@
   }
   html {
     @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
   }
+}
+
+:focus {
+  outline: none;
+}
+
+/* Google Maps adds its own focus ring to interactive map elements. */
+.gm-style :focus {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .dark {
@@ -152,20 +163,9 @@
 
 .map-marker-pin {
   display: block;
-  transform: scale(1);
-  transform-origin: 50% 100%;
-  transition: transform 220ms ease-out;
-}
-
-.map-marker-pin[data-selected='true'] {
-  transform: scale(1.5);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-marker-pin {
-    transition: none;
-  }
-
   .map-panel-enter {
     animation: none;
   }

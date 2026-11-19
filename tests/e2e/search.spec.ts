@@ -373,8 +373,12 @@ test('周辺一覧から詳細へ進み、一覧アイコンと地図操作で�
       .poll(() => scrollArea.evaluate((element) => element.scrollTop))
       .toBe(previousScroll)
   await expect(list.getByRole('button', { name: label! })).toBeVisible()
-  if (mobile)
-    await expect(list.getByRole('button', { name: label! })).toBeFocused()
+  if (mobile) {
+    const returnedRow = list.getByRole('button', { name: label! })
+    await expect(returnedRow).toBeFocused()
+    await expect(returnedRow).toHaveCSS('outline-style', 'none')
+    await expect(returnedRow).toHaveCSS('box-shadow', 'none')
+  }
   await expect(mapPins(page)).toHaveCount(9)
   expect((await readState(page)).nearbyCalls).toHaveLength(1)
   expect((await readState(page)).autocompleteCalls).toHaveLength(0)
