@@ -33,7 +33,7 @@ export function AppHeaderActions({ glass = false }: { glass?: boolean }) {
   const admin = useAdmin()
   const pending = usePendingStoreRequestCount()
   const actionButtonClassName = glass
-    ? 'relative h-10 w-8 rounded-full transition hover:bg-foreground/10 focus-visible:z-10 aria-expanded:bg-foreground/10 dark:hover:bg-foreground/10 max-[360px]:w-[30px] lg:w-10'
+    ? 'relative h-10 w-8 rounded-full transition hover:bg-foreground/10 aria-expanded:bg-foreground/10 dark:hover:bg-foreground/10 max-[360px]:w-[30px] lg:w-10'
     : 'size-10 hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent'
   const count = pending.isError ? undefined : pending.data
   const requestLabel = pending.isError

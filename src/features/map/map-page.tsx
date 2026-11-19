@@ -1101,16 +1101,8 @@ function MapCanvas({
         aria-label="周辺の地図"
         style={{ width: '100%', height: '100%' }}
       >
-        <StoreMarkers
-          stores={stores}
-          selectedId={selectedStore?.id ?? null}
-          onSelect={onStoreSelect}
-        />
-        <PlaceMarkers
-          entries={entries}
-          selectedId={selectedPlace?.place?.id ?? null}
-          onSelect={onPlaceSelect}
-        />
+        <StoreMarkers stores={stores} onSelect={onStoreSelect} />
+        <PlaceMarkers entries={entries} onSelect={onPlaceSelect} />
         {location && (
           <AdvancedMarker position={location} title="現在地" anchorTop="-50%">
             <span className="block size-5 rounded-full border-[3px] border-white bg-primary shadow-[0_0_0_7px_color-mix(in_oklch,var(--primary)_18%,transparent)]" />

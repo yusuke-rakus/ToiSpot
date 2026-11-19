@@ -109,7 +109,7 @@ export function StorePanel({
               <li key={entry.key}>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/65 sm:px-7"
                   onClick={() =>
                     store
                       ? onSelectStore(store.id)

@@ -162,7 +162,7 @@ function RequestRow({
     <article aria-label={`${request.input.name}の申請`} className="py-1">
       <button
         type="button"
-        className="flex w-full items-start justify-between gap-4 py-5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="flex w-full items-start justify-between gap-4 py-5 text-left"
         aria-expanded={expanded}
         aria-controls={`request-${request.id}`}
         disabled={review.isPending}

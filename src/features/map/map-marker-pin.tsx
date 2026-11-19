@@ -2,11 +2,9 @@ import { classifyChain } from '../search/search-filters'
 
 export function MapMarkerPin({
   name,
-  selected,
   neutral = false,
 }: {
   name: string
-  selected: boolean
   neutral?: boolean
 }) {
   const directory = neutral ? 'icons/map-pins/neutral' : 'icons/map-pins'
@@ -15,7 +13,6 @@ export function MapMarkerPin({
   return (
     <img
       className="map-marker-pin"
-      data-selected={selected}
       src={`${import.meta.env.BASE_URL}${directory}/${filename}`}
       width="28"
       height="36"

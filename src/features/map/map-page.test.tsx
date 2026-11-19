@@ -833,10 +833,6 @@ describe('Firestoreの店舗表示', () => {
       screen.queryByRole('article', { name: '店舗の詳細' }),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('list', { name: '周辺店舗一覧' })).toBeVisible()
-    expect(
-      screen.getByRole('button', { name: `${stores[1].name}・利用可` })
-        .firstChild,
-    ).toHaveAttribute('data-selected', 'false')
     expect(maps.panTo).toHaveBeenCalledTimes(1)
     expect(placesQuery.search).not.toHaveBeenCalled()
     expect(screen.queryByText('35.680000')).not.toBeInTheDocument()
@@ -1250,19 +1246,17 @@ describe('Placesのピンと登録情報', () => {
     placesQuery.places = [place]
     linksQuery.data = { [place.id]: null }
   })
-  it('未登録ピンも選択状態になり、一般利用者は閲覧できる', async () => {
+  it('未登録ピンから一般利用者が店舗詳細を開閉できる', async () => {
     const user = userEvent.setup()
     render(<MapPage config={config} />)
     const pin = screen.getByRole('button', {
       name: `${place.name}・データなし`,
     })
-    expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
     expect(pin.firstChild).toHaveAttribute(
       'src',
       '/icons/map-pins/neutral/convenience-store.svg',
     )
     await user.click(pin)
-    expect(pin.firstChild).toHaveAttribute('data-selected', 'true')
     expect(screen.getByText('トイレ情報：データなし')).toBeVisible()
     expect(screen.getByText(place.address)).toBeVisible()
     expect(
@@ -1270,7 +1264,6 @@ describe('Placesのピンと登録情報', () => {
     ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '登録を申請' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: '地図上の地点を選択' }))
-    expect(pin.firstChild).toHaveAttribute('data-selected', 'false')
     expect(screen.queryByText('トイレ情報：データなし')).not.toBeInTheDocument()
     expect(screen.getByRole('list', { name: '周辺店舗一覧' })).toBeVisible()
   })
