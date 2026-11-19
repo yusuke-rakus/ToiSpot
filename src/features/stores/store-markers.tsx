@@ -4,11 +4,9 @@ import { availabilityLabels, type Store } from './store-schema'
 
 export function StoreMarkers({
   stores,
-  selectedId,
   onSelect,
 }: {
   stores: Store[]
-  selectedId: string | null
   onSelect: (id: string) => void
 }) {
   return stores.map((store) => (
@@ -17,9 +15,9 @@ export function StoreMarkers({
       position={store.location}
       title={`${store.name}・${availabilityLabels[store.availability]}`}
       onClick={() => onSelect(store.id)}
-      zIndex={store.id === selectedId ? 10 : 1}
+      zIndex={1}
     >
-      <MapMarkerPin name={store.name} selected={store.id === selectedId} />
+      <MapMarkerPin name={store.name} />
     </AdvancedMarker>
   ))
 }

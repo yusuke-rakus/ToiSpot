@@ -169,7 +169,7 @@ export function DestinationSearch({
           autoComplete="off"
           enterKeyHint="search"
           placeholder="駅・地名・店名で検索"
-          className="h-12 rounded-none border-0 bg-transparent pl-10 pr-20 text-base shadow-none focus-visible:ring-0"
+          className="h-12 rounded-none border-0 bg-transparent pl-10 pr-20 text-base shadow-none"
           value={search.query}
           disabled={disabled}
           onFocus={() => {

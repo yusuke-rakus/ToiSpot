@@ -257,7 +257,6 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
     const pin = page.getByRole('button', {
       name: '設備のあるコンビニ・利用可',
     })
-    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'true')
     const map = page.getByLabel('周辺の地図', { exact: true })
     await expect(map).toHaveCSS('cursor', 'default')
     const blankPoint = await map.evaluate((element) => {
@@ -273,10 +272,8 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
     })
     await map.tap({ position: blankPoint })
     await expect(panel).toHaveCount(0)
-    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'false')
     await pin.tap()
     await expect(panel).toBeVisible()
-    await expect(pin.locator('img')).toHaveAttribute('data-selected', 'true')
   }
   expect(externalRequests).toEqual([])
 })

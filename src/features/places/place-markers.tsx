@@ -4,11 +4,9 @@ import { registrationLabels, type MapEntry } from './map-entries'
 
 export function PlaceMarkers({
   entries,
-  selectedId,
   onSelect,
 }: {
   entries: MapEntry[]
-  selectedId: string | null
   onSelect: (id: string) => void
 }) {
   return entries
@@ -19,11 +17,10 @@ export function PlaceMarkers({
         position={entry.location}
         title={`${entry.name}・${registrationLabels[entry.registration]}`}
         onClick={() => onSelect(entry.place!.id)}
-        zIndex={entry.place!.id === selectedId ? 10 : 0}
+        zIndex={0}
       >
         <MapMarkerPin
           name={entry.name}
-          selected={entry.place!.id === selectedId}
           neutral={entry.registration === 'missing'}
         />
       </AdvancedMarker>

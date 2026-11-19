@@ -162,10 +162,8 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     await expect(sheet).toBeVisible()
   }
   await expect(pinImage).toHaveAttribute('src', lawsonIcon)
-  await expect(pinImage).toHaveCSS('transform', 'matrix(1.5, 0, 0, 1.5, 0, 0)')
-  await expect(pinImage).toHaveCSS('transition-property', 'transform')
-  await expect(pinImage).toHaveCSS('transition-duration', '0.22s')
-  await expect(pinImage).toHaveCSS('transition-timing-function', 'ease-out')
+  await expect(pinImage).toHaveCSS('transform', 'none')
+  await expect(pin).toHaveCSS('outline-style', 'none')
   const sourceLabel = page
     .getByRole('article', { name: 'コンビニの詳細' })
     .getByText('Google Maps の店舗情報', { exact: true })
@@ -182,9 +180,6 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     viewportBounds.y + viewportBounds.height,
   )
 
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  await expect(pinImage).toHaveCSS('transition-property', 'none')
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await expect(
     page.getByRole('button', { name: 'トイレ情報を登録' }),
   ).toHaveCount(0)
@@ -225,10 +220,8 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     expect(registeredUrl.searchParams.get('destination')).toBe(
       `${store.location.lat},${store.location.lng}`,
     )
-    await expect(pinImage).toHaveAttribute('data-selected', 'false')
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
-    await expect(registeredImage).toHaveAttribute('data-selected', 'false')
     await pin.click()
   }
 
@@ -250,17 +243,14 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     ),
   ).toBe(true)
   await expect(pinImage).toHaveAttribute('src', lawsonIcon)
-  await expect(pinImage).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  await expect(pinImage).toHaveCSS('transform', 'none')
   if (mobile) await registeredPin.click()
   else
     await page
       .getByRole('button', { name: `${store.name}の詳細を見る` })
       .click()
   await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
-  await expect(registeredImage).toHaveCSS(
-    'transform',
-    'matrix(1.5, 0, 0, 1.5, 0, 0)',
-  )
+  await expect(registeredImage).toHaveCSS('transform', 'none')
   if (mobile) {
     await sheet.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
     await expect(sheet).toHaveCount(0)
@@ -271,10 +261,7 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
     })
   }
   await expect(registeredImage).toHaveAttribute('src', sevenElevenIcon)
-  await expect(registeredImage).toHaveCSS(
-    'transform',
-    'matrix(1, 0, 0, 1, 0, 0)',
-  )
+  await expect(registeredImage).toHaveCSS('transform', 'none')
   expect(externalRequests).toEqual([])
 })
 
