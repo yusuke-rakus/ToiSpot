@@ -8,14 +8,17 @@ const stores: Store[] = [
     ...base,
     id: 'equipment',
     name: '設備のあるコンビニ',
-    notes: '',
+    notes: '店舗のトイレを利用する際は店員にお声がけください。'.repeat(18),
     stalls: { shared: 2, male: 1, female: 1 },
     urinals: 1,
   },
   {
     ...base,
     id: 'mixed',
-    name: '一部未確認のコンビニ',
+    name: `一部未確認のコンビニ ${'LongStoreName'.repeat(8)}`,
+    address: '東京都千代田区丸の内1丁目 東京駅地下通路 改札外 店舗区画'.repeat(
+      3,
+    ),
     notes: '',
     stalls: { shared: 2, male: 0, female: null },
     urinals: 0,
@@ -102,8 +105,37 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
   const details = panel.getByRole('article', { name: '店舗の詳細' })
 
   for (const theme of ['ライト', 'ダーク']) {
+    if (mobile) {
+      await page.setViewportSize(
+        theme === 'ライト'
+          ? { width: 390, height: 844 }
+          : { width: 360, height: 640 },
+      )
+    }
     await page.getByRole('button', { name: /テーマを変更/ }).click()
     await page.getByRole('menuitemradio', { name: theme, exact: true }).click()
+    if (mobile) {
+      await page.getByRole('button', { name: /^店舗一覧を表示/ }).click()
+      const list = page.getByRole('list', { name: '周辺店舗一覧' })
+      for (const store of positionedStores) {
+        const row = list.getByRole('button', {
+          name: `${store.name}の詳細を見る`,
+        })
+        const status =
+          store.availability === 'available' ? '利用可' : '利用不可'
+        await expect(row).toHaveAccessibleDescription(
+          new RegExp(`^${status} .*直線距離`),
+        )
+        expect(
+          await row.evaluate((el) => el.scrollWidth <= el.clientWidth),
+        ).toBe(true)
+      }
+      await page.screenshot({
+        path: `output/playwright/toilet-list-mobile-${theme === 'ライト' ? 'light' : 'dark'}.png`,
+        animations: 'disabled',
+      })
+      await page.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
+    }
     for (const store of stores) {
       if (mobile) {
         await page
@@ -131,6 +163,42 @@ test('貸出状況に応じた設備表示をPC・スマホの明暗テーマで
         expect(
           await equipment.evaluate((el) => el.scrollWidth <= el.clientWidth),
         ).toBe(true)
+        if (mobile) {
+          const directions = panel.getByRole('link', {
+            name: 'Google マップで経路を見る',
+          })
+          const viewport = panel.getByRole('region', {
+            name: '選択した店舗の情報',
+          })
+          await expect(directions).toBeInViewport({ ratio: 1 })
+          const linkBounds = await directions.boundingBox()
+          const sheetTop = (await panel.boundingBox())!.y
+          const controls = page.getByRole('group', { name: '地図の表示操作' })
+          const search = page.locator('[data-map-search-panel]')
+          await expect
+            .poll(async () => {
+              const box = (await controls.boundingBox())!
+              return box.y + box.height
+            })
+            .toBeLessThan(sheetTop)
+          const searchBounds = (await search.boundingBox())!
+          expect((await controls.boundingBox())!.y).toBeGreaterThan(
+            searchBounds.y + searchBounds.height,
+          )
+          await details
+            .getByText(store.notes, { exact: true })
+            .scrollIntoViewIfNeeded()
+          expect(await viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(
+            0,
+          )
+          expect(await directions.boundingBox()).toEqual(linkBounds)
+          await expect(
+            panel.getByRole('button', { name: 'トイレ情報を閉じる' }),
+          ).toBeInViewport({ ratio: 1 })
+          await viewport.evaluate((el) => {
+            el.scrollTop = 0
+          })
+        }
       } else if (store.id === 'mixed') {
         await expect(equipment.locator('dt')).toHaveCount(2)
         await expect(details.getByText('男性用個室')).toHaveCount(0)

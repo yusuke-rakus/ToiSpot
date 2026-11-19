@@ -1,13 +1,6 @@
-import type { ReactNode } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { useId, type ReactNode } from 'react'
+import { Check, ChevronRight, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import {
-  Item,
-  ItemContent,
-  ItemTitle,
-  ItemDescription,
-  ItemActions,
-} from '@/components/ui/item'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
@@ -25,12 +18,8 @@ import { pointDistance } from '../map/search-area'
 type Props = {
   areaLabel?: string
   query: ReturnType<typeof useStores>
-  selectedStore: Store | null
-  pointContent: ReactNode
+  selectedContent: ReactNode
   onSelectStore: (id: string) => void
-  onEdit?: () => void
-  editLabel?: string
-  editDisabled?: boolean
   entries: MapEntry[]
   placesStatus: PlacesSearchState['status']
   onSelectPlace: (id: string) => void
@@ -50,12 +39,8 @@ type Props = {
 export function StorePanel({
   areaLabel,
   query,
-  selectedStore,
-  pointContent,
+  selectedContent,
   onSelectStore,
-  onEdit,
-  editLabel,
-  editDisabled,
   entries,
   placesStatus,
   onSelectPlace,
@@ -71,6 +56,7 @@ export function StorePanel({
   searchCenter,
   onClearFilters,
 }: Props) {
+  const listId = useId()
   const result = query.data
   return (
     <>
@@ -108,78 +94,80 @@ export function StorePanel({
         </Button>
       )}
 
-      {pointContent ? (
-        <div className="pt-5">{pointContent}</div>
-      ) : selectedStore ? (
-        <div className="pt-5">
-          <SelectedStoreDetails
-            store={selectedStore}
-            onEdit={onEdit}
-            editLabel={editLabel}
-            editDisabled={editDisabled}
-          />
-        </div>
+      {selectedContent ? (
+        <div className="pt-5">{selectedContent}</div>
       ) : entries.length > 0 ? (
         <ul
           aria-label="周辺店舗一覧"
           className="-mx-5 divide-y border-b sm:-mx-7"
         >
-          {entries.map((entry) => {
+          {entries.map((entry, index) => {
             const store = entry.store
+            const statusId = `${listId}-${index}-status`
+            const distanceId = `${listId}-${index}-distance`
             return (
               <li key={entry.key}>
-                <Item asChild className="rounded-none border-0 p-0">
-                  <button
-                    type="button"
-                    className="group w-full px-5 py-4 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
-                    onClick={() =>
-                      store
-                        ? onSelectStore(store.id)
-                        : onSelectPlace(entry.place!.id)
-                    }
-                    aria-label={`${entry.name}の詳細を見る`}
-                  >
-                    <ItemContent>
-                      <div className="mb-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/65 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:px-7"
+                  onClick={() =>
+                    store
+                      ? onSelectStore(store.id)
+                      : onSelectPlace(entry.place!.id)
+                  }
+                  aria-label={`${entry.name}の詳細を見る`}
+                  aria-describedby={
+                    searchCenter ? `${statusId} ${distanceId}` : statusId
+                  }
+                >
+                  <span className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+                    <span
+                      role="heading"
+                      aria-level={3}
+                      className="text-sm leading-5 font-semibold wrap-anywhere"
+                    >
+                      {entry.name}
+                    </span>
+                    <span className="flex max-w-full flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span id={statusId} className="inline-flex max-w-full">
                         {store ? (
                           <AvailabilityBadge store={store} />
                         ) : (
-                          <>
-                            <ItemDescription className="text-[11px]">
-                              Google Maps の店舗情報
-                            </ItemDescription>
-                            <Badge variant="secondary" className="text-[11px]">
-                              {registrationLabels[entry.registration]}
-                            </Badge>
-                          </>
+                          <Badge
+                            variant="secondary"
+                            className="h-auto min-h-6 max-w-full py-0.5 text-left whitespace-normal"
+                          >
+                            {registrationLabels[entry.registration]}
+                          </Badge>
                         )}
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <ItemTitle className="text-sm leading-6">
-                          <h3>{entry.name}</h3>
-                        </ItemTitle>
-                        <ItemActions>
-                          <ArrowUpRight
-                            className="mt-1 size-4 shrink-0 text-muted-foreground"
-                            aria-hidden="true"
-                          />
-                        </ItemActions>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {store?.address ?? entry.place?.address}
-                      </p>
+                      </span>
                       {searchCenter && (
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <span
+                          id={distanceId}
+                          className="text-xs font-medium text-foreground"
+                        >
                           検索地点から約
                           {formatDistance(
                             pointDistance(searchCenter, entry.location),
                           )}
                           （直線距離）
-                        </p>
+                        </span>
                       )}
-                    </ItemContent>
-                  </button>
-                </Item>
+                    </span>
+                    <span className="text-xs leading-5 wrap-anywhere text-muted-foreground">
+                      {store?.address ?? entry.place?.address}
+                    </span>
+                    {!store && (
+                      <span className="text-xs text-muted-foreground">
+                        Google Maps の店舗情報
+                      </span>
+                    )}
+                  </span>
+                  <ChevronRight
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </button>
               </li>
             )
           })}
@@ -228,18 +216,20 @@ function formatDistance(meters: number) {
 
 export function SelectedStoreDetails({
   store,
+  directionsAction,
   onEdit,
   editLabel = '店舗を編集',
   editDisabled = false,
 }: {
   store: Store
+  directionsAction?: ReactNode
   onEdit?: () => void
   editLabel?: string
   editDisabled?: boolean
 }) {
   return (
     <>
-      <StoreDetails store={store} />
+      <StoreDetails store={store} directionsAction={directionsAction} />
       {onEdit && (
         <Button
           variant="outline"
@@ -255,21 +245,26 @@ export function SelectedStoreDetails({
 }
 
 export function AvailabilityBadge({ store }: { store: Store }) {
-  const style =
-    store.availability === 'available'
-      ? 'bg-primary/10 text-primary'
-      : 'bg-muted text-muted-foreground'
+  const available = store.availability === 'available'
+  const Icon = available ? Check : X
+  const style = available
+    ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+    : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200'
   return (
-    <Badge
-      variant="secondary"
-      className={`shrink-0 px-2 py-1 text-[11px] ${style}`}
-    >
+    <Badge variant="secondary" className={`h-6 font-semibold ${style}`}>
+      <Icon aria-hidden="true" />
       {availabilityLabels[store.availability]}
     </Badge>
   )
 }
 
-export function StoreDetails({ store }: { store: Store }) {
+export function StoreDetails({
+  store,
+  directionsAction,
+}: {
+  store: Store
+  directionsAction?: ReactNode
+}) {
   const equipment =
     store.availability === 'available'
       ? [
@@ -301,34 +296,34 @@ export function StoreDetails({ store }: { store: Store }) {
       : []
   return (
     <article className="map-panel-enter" aria-label="店舗の詳細">
-      <h3 className="text-lg leading-7 font-semibold tracking-tight">
+      <h3 className="text-lg leading-6 font-semibold tracking-tight wrap-anywhere max-lg:pr-10">
         {store.name}
       </h3>
-      <p className="mt-2 text-xs leading-6 text-muted-foreground">
+      <p className="mt-1 text-xs leading-5 wrap-anywhere text-muted-foreground">
         {store.address}
       </p>
-      <Separator className="mt-6" />
-      <div className="flex items-center justify-between gap-3 pt-5">
+      <div className="mt-3 flex items-center gap-2">
         <h4 className="text-xs font-medium text-muted-foreground">貸出状況</h4>
         <AvailabilityBadge store={store} />
       </div>
+      {directionsAction}
       {equipment.length > 0 && (
         <dl
           aria-label="トイレ設備"
-          className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5"
+          className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3"
         >
           {equipment.map(({ label, count, unit, icon }) => (
             <div key={label} className="min-w-0">
-              <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+              <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span
                   aria-hidden="true"
-                  className="flex size-6 shrink-0 items-center justify-center text-xl"
+                  className="flex size-5 shrink-0 items-center justify-center text-base"
                 >
                   {icon}
                 </span>
                 {label}
               </dt>
-              <dd className="mt-1 pl-8 text-xl font-semibold tabular-nums">
+              <dd className="pl-6.5 text-base font-semibold tabular-nums">
                 {formatEquipmentCount(count, unit)}
               </dd>
             </div>
@@ -337,8 +332,8 @@ export function StoreDetails({ store }: { store: Store }) {
       )}
       {store.notes.trim() && (
         <>
-          <Separator className="mt-6" />
-          <div className="pt-5">
+          <Separator className="mt-4" />
+          <div className="pt-3">
             <h4 className="text-xs font-medium text-muted-foreground">備考</h4>
             <p className="mt-2 whitespace-pre-wrap text-sm leading-7">
               {store.notes}
@@ -359,7 +354,7 @@ function UrinalIcon() {
       strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="size-6"
+      className="size-5"
       aria-hidden="true"
       focusable="false"
     >
