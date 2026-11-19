@@ -12,6 +12,7 @@ const store = {
 
 test('周辺コンビニのチェーン別ピン・詳細・手動検索を外部通信なしで操作できる', async ({
   page,
+  context,
 }, testInfo) => {
   const externalRequests: string[] = []
   page.on('request', (request) => {
@@ -128,6 +129,38 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   }
   await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
   await expect(page.getByText('Googleから取得した住所')).toBeVisible()
+  const directions = page.getByRole('link', {
+    name: 'Google マップで経路を見る',
+  })
+  const unregisteredUrl = new URL((await directions.getAttribute('href'))!)
+  expect(unregisteredUrl.origin + unregisteredUrl.pathname).toBe(
+    'https://www.google.com/maps/dir/',
+  )
+  expect(unregisteredUrl.searchParams.get('api')).toBe('1')
+  expect(unregisteredUrl.searchParams.get('destination_place_id')).toBe(
+    'ChIJ_mock',
+  )
+  expect(unregisteredUrl.searchParams.get('destination')).toMatch(
+    /^\d+\.\d+,\d+\.\d+$/,
+  )
+  expect(unregisteredUrl.searchParams.has('origin')).toBe(false)
+  expect(unregisteredUrl.searchParams.has('travelmode')).toBe(false)
+  if (mobile) {
+    await context.route('https://www.google.com/maps/dir/**', (route) =>
+      route.fulfill({
+        contentType: 'text/plain; charset=utf-8',
+        body: '経路のテスト表示',
+      }),
+    )
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      directions.click(),
+    ])
+    await expect(popup).toHaveURL(unregisteredUrl.href)
+    await expect(popup.getByText('経路のテスト表示')).toBeVisible()
+    await popup.close()
+    await expect(sheet).toBeVisible()
+  }
   await expect(pinImage).toHaveAttribute('src', lawsonIcon)
   await expect(pinImage).toHaveCSS('transform', 'matrix(1.5, 0, 0, 1.5, 0, 0)')
   await expect(pinImage).toHaveCSS('transition-property', 'transform')
@@ -185,6 +218,13 @@ test('周辺コンビニのチェーン別ピン・詳細・手動検索を外�
   if (mobile) {
     await registeredPin.click()
     await expect(sheet.getByRole('heading', { name: store.name })).toBeVisible()
+    const registeredUrl = new URL((await directions.getAttribute('href'))!)
+    expect(registeredUrl.searchParams.get('destination_place_id')).toBe(
+      store.googlePlaceId,
+    )
+    expect(registeredUrl.searchParams.get('destination')).toBe(
+      `${store.location.lat},${store.location.lng}`,
+    )
     await expect(pinImage).toHaveAttribute('data-selected', 'false')
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)

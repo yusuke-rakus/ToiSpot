@@ -86,6 +86,7 @@ import {
   type SearchArea,
 } from './search-area'
 import { useViewportSearch } from './use-viewport-search'
+import { StoreDirectionsLink } from './store-directions-link'
 import {
   useMapNotice,
   useMapSearchNotifications,
@@ -481,32 +482,46 @@ function MapPageContent({ config }: { config: MapConfig }) {
   const onEdit =
     canWrite && selectedStore ? () => void editStore(selectedStore) : undefined
   const editLabel = admin.status === 'admin' ? '店舗を編集' : '修正を申請'
-  const pointContent =
-    selectedEntry?.place && !selectedEntry.store ? (
-      <PlaceDetails
-        key={selectedEntry.key}
-        entry={selectedEntry}
-        canManage={admin.status === 'admin'}
-        canRegister={canWrite}
-        registering={preparingRequest}
-        onRegister={() => createStore(selectedEntry.place!)}
-      />
-    ) : null
+  const selectedPlace = selectedEntry?.place
+  const directionsLink = selectedStore ? (
+    <StoreDirectionsLink
+      location={selectedStore.location}
+      placeId={selectedStore.googlePlaceId}
+    />
+  ) : selectedPlace ? (
+    <StoreDirectionsLink
+      location={selectedPlace.location}
+      placeId={selectedPlace.id}
+    />
+  ) : null
+  const inlineDirections =
+    !isMobile && directionsLink ? (
+      <div className="mt-3">{directionsLink}</div>
+    ) : undefined
+  const selectedContent = selectedStore ? (
+    <SelectedStoreDetails
+      store={selectedStore}
+      directionsAction={inlineDirections}
+      onEdit={onEdit}
+      editLabel={editLabel}
+      editDisabled={preparingRequest}
+    />
+  ) : selectedEntry && selectedPlace ? (
+    <PlaceDetails
+      key={selectedEntry.key}
+      entry={selectedEntry}
+      directionsAction={inlineDirections}
+      canManage={admin.status === 'admin'}
+      canRegister={canWrite}
+      registering={preparingRequest}
+      onRegister={() => createStore(selectedPlace)}
+    />
+  ) : null
   const areaLabel = viewportSearch
     ? searchTarget.radiusMeters === MAX_NEARBY_RADIUS_METERS
       ? '地図の中心から半径50km・近い順'
       : '地図の表示範囲・中心から近い順'
     : '東京駅から半径3km・近い順'
-  const selectedContent =
-    pointContent ??
-    (selectedStore && (
-      <SelectedStoreDetails
-        store={selectedStore}
-        onEdit={onEdit}
-        editLabel={editLabel}
-        editDisabled={preparingRequest}
-      />
-    ))
   const resultPanel = (
     <StorePanel
       query={storesQuery}
@@ -525,12 +540,8 @@ function MapPageContent({ config }: { config: MapConfig }) {
       placesStatus={places.status}
       placesPartialError={viewportSearch && places.partialError}
       onRetryPlaces={retryPlaces}
-      selectedStore={selectedStore}
+      selectedContent={selectedContent}
       onSelectStore={selectStore}
-      onEdit={onEdit}
-      editLabel={editLabel}
-      editDisabled={preparingRequest}
-      pointContent={pointContent}
     />
   )
 
@@ -690,14 +701,14 @@ function MapPageContent({ config }: { config: MapConfig }) {
       {isMobile && (
         <Sheet
           modal={false}
-          open={mobileListOpen || Boolean(selectedStore || pointContent)}
+          open={mobileListOpen || Boolean(selectedContent)}
           onOpenChange={(open) => {
             if (!open) closeResultPanel()
           }}
         >
           <SheetContent
             ref={setSheetElement}
-            className={`${selection ? 'max-h-[42dvh]' : 'max-h-[65dvh]'} pb-[env(safe-area-inset-bottom)]`}
+            className={`${selection ? 'max-h-[min(65dvh,calc(100svh-240px))]' : 'max-h-[65dvh]'} pb-[env(safe-area-inset-bottom)]`}
             aria-describedby={undefined}
             onInteractOutside={(event) => event.preventDefault()}
             onOpenAutoFocus={(event) => {
@@ -728,7 +739,7 @@ function MapPageContent({ config }: { config: MapConfig }) {
               role={selection ? 'region' : undefined}
               aria-label={selection ? '選択した店舗の情報' : undefined}
               key={selection && `${selection.kind}:${selection.id}`}
-              className={`min-h-0 overflow-y-auto overscroll-contain px-5 pb-5 ${selection ? 'pt-5' : 'pt-0'}`}
+              className={`min-h-0 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-7 ${selection ? 'pt-5' : 'pt-0'}`}
               onScroll={(event) => {
                 if (!selection)
                   listScrollTop.current = event.currentTarget.scrollTop
@@ -736,6 +747,11 @@ function MapPageContent({ config }: { config: MapConfig }) {
             >
               {selection ? selectedContent : resultPanel}
             </div>
+            {directionsLink && (
+              <div className="shrink-0 border-t px-5 py-2.5 sm:px-7">
+                {directionsLink}
+              </div>
+            )}
           </SheetContent>
         </Sheet>
       )}
