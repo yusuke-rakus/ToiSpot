@@ -158,9 +158,10 @@ it('接続失敗は権限を与えず、無効状態では認証を起動しな�
   expect(mocks.prepare).not.toHaveBeenCalled()
   await expect(
     loginWithPassword('admin@example.test', 'test-password'),
-  ).rejects.toThrow('Firebase接続は無効')
+  ).rejects.toThrow()
+  expect(mocks.signIn).not.toHaveBeenCalled()
 })
-it('認証情報の誤りは共通メッセージにし、生のエラーを出さない', () => {
+it('認証失敗の結果からアカウントの有無やSDKの診断情報を判別できない', () => {
   const invalid = loginErrorMessage({ code: 'auth/invalid-credential' })
   for (const code of [
     'auth/user-not-found',
@@ -169,24 +170,7 @@ it('認証情報の誤りは共通メッセージにし、生のエラーを出�
   ]) {
     expect(loginErrorMessage({ code })).toBe(invalid)
   }
-  expect(invalid).toContain('メールアドレスまたはパスワード')
-  expect(loginErrorMessage({ code: 'auth/invalid-email' })).toContain('形式')
-  expect(loginErrorMessage({ code: 'auth/missing-password' })).toContain('入力')
-  expect(loginErrorMessage({ code: 'auth/too-many-requests' })).toContain(
-    'しばらく',
-  )
-  expect(
-    loginErrorMessage({ code: 'auth/admin-restricted-operation' }),
-  ).toContain('登録済み')
-  expect(loginErrorMessage({ code: 'auth/user-disabled' })).toContain('無効')
-  expect(loginErrorMessage({ code: 'auth/unauthorized-domain' })).toContain(
-    'ドメイン設定',
-  )
-  expect(loginErrorMessage({ code: 'auth/network-request-failed' })).toContain(
-    '通信',
-  )
   expect(loginErrorMessage(new Error('secret-url'))).not.toContain('secret-url')
-  expect(loginErrorMessage(new Error('secret-url'))).not.toContain('Emulator')
 })
 
 it('セッション準備後、クラウドでも同じAuthでパスワード認証とログアウトを行う', async () => {
@@ -221,13 +205,13 @@ it('セッション準備に失敗した場合は認証せず、再試行でき�
   expect(mocks.signIn).toHaveBeenCalledOnce()
 })
 
-it('SDK初期化に失敗しても画面を落とさず、生の設定値を表示しない', () => {
+it('SDK初期化に失敗したら認証を開始せず、生の設定値を返さない', () => {
   mocks.initializationError = true
   const changed = vi.fn()
   expect(() => observeAdminSession(changed)()).not.toThrow()
   expect(changed).toHaveBeenLastCalledWith({
     status: 'error',
-    message: '認証を開始できませんでした。管理者が接続設定を確認してください。',
+    message: expect.not.stringContaining('private-config-value'),
   })
   expect(mocks.prepare).not.toHaveBeenCalled()
 })

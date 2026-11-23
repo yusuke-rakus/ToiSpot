@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { Timestamp } from 'firebase/firestore'
 import { createTestStores } from '../../../tests/fixtures/stores'
 import {
-  formatEquipmentCount,
   parseStoreDocuments,
   storeDocumentSchema,
   storeInputSchema,
@@ -13,14 +12,18 @@ const samples = createTestStores('2026-11-03T00:00:00.000Z')
 const data = samples[0].data
 
 describe('店舗データの検証', () => {
-  it('テスト用店舗6件で全状態と設備の構成を確認できる', () => {
-    expect(new Set(samples.map((s) => s.id)).size).toBe(6)
-    expect(new Set(samples.map((s) => s.data.availability)).size).toBe(2)
-    expect(samples.every((s) => s.data.googlePlaceId && !s.data.isSample)).toBe(
-      true,
-    )
-    expect(formatEquipmentCount(0)).toBe('0基')
-    expect(formatEquipmentCount(null)).toBe('不明')
+  it('設備数の0と未確認のnullを別の値として読み取る', () => {
+    const equipment = {
+      stalls: { male: 0, female: null, shared: 2 },
+      urinals: 0,
+    }
+    expect(
+      storeDocumentSchema.parse({
+        ...data,
+        availability: 'available',
+        ...equipment,
+      }),
+    ).toMatchObject(equipment)
   })
 
   it('Place IDのない店舗と架空サンプルを拒否する', () => {

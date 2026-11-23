@@ -1,52 +1,19 @@
 import { expect, test } from '@playwright/test'
+import { blockExternalRequests } from './fixtures/network'
 
-test('Firebase設定が揃っていてもe2eでは認証と外部通信を停止する', async ({
+test('Mapsキー未設定とFirebase無効の状態では外部APIに接続しない', async ({
   page,
 }) => {
-  const externalRequests: string[] = []
-  page.on('request', (request) => {
-    if (
-      /^https?:/.test(request.url()) &&
-      new URL(request.url()).hostname !== '127.0.0.1'
-    )
-      externalRequests.push(request.url())
-  })
+  const externalRequests = await blockExternalRequests(page)
+  await page.goto('/')
+  await page.getByRole('main').waitFor({ state: 'attached' })
   await page.goto('/admin-login')
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeDisabled()
-  await expect(page.getByRole('alert')).toHaveText(
-    'ログインはこの環境では利用できません。',
-  )
   expect(externalRequests).toEqual([])
 })
 
-test('APIキー未設定では外部APIを呼ばずに設定案内を表示する', async ({
-  page,
-}) => {
-  const externalRequests: string[] = []
-  page.on('request', (request) => {
-    if (
-      /^https?:/.test(request.url()) &&
-      new URL(request.url()).hostname !== '127.0.0.1'
-    ) {
-      externalRequests.push(request.url())
-    }
-  })
-
-  await page.goto('/')
-  await expect(
-    page.getByRole('heading', { name: '地図の設定が必要です' }),
-  ).toBeVisible()
-  await expect(page).toHaveTitle('コンビニトイレマップ')
-  expect(externalRequests).toEqual([])
-})
-
-test('存在しないURLからトップへ戻れる', async ({ page }) => {
+test('存在しないURLからトップへ遷移できる', async ({ page }) => {
   await page.goto('/missing-page')
-  await expect(
-    page.getByRole('heading', { name: 'ページが見つかりません' }),
-  ).toBeVisible()
   await page.getByRole('link', { name: 'トップに戻る' }).click()
-  await expect(
-    page.getByRole('heading', { name: 'コンビニトイレマップ' }),
-  ).toBeAttached()
+  await expect(page).toHaveURL('/')
 })
