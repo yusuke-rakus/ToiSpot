@@ -59,6 +59,8 @@ Rules・インデックス・Docker用設定は読み取り専用でマウント
 
 ## 検証コマンド
 
+自動テストの対象と手動確認の項目は[テスト方針](testing.md)を参照する。
+
 | コマンド                 | 内容                                                                              |
 | ------------------------ | --------------------------------------------------------------------------------- |
 | `pnpm docs:dependencies` | 導入済みの直接依存からバージョン一覧を再生成                                      |
@@ -67,14 +69,16 @@ Rules・インデックス・Docker用設定は読み取り専用でマウント
 | `pnpm docs:check`        | 文書リンク、見出し階層、要件・未決事項IDを検証                                    |
 | `pnpm typecheck`         | TypeScriptの型検査                                                                |
 | `pnpm lint`              | ESLintによる検査                                                                  |
-| `pnpm test`              | Vitestの単体・画面テスト用プロジェクト                                            |
-| `pnpm build`             | 型検査と本番用ビルド                                                              |
-| `pnpm check`             | 文書・型・lint・単体テスト・ビルドをまとめて実行                                  |
+| `pnpm test`              | Vitestで機能の単体・結合テストを実行                                              |
+| `pnpm build`             | 型検査とViteビルド                                                                |
+| `pnpm check`             | 文書・型・lint・Vitest・ビルドをまとめて実行                                      |
 | `pnpm format:check`      | Prettierの書式確認                                                                |
 | `pnpm format`            | Prettierで整形                                                                    |
-| `pnpm test:e2e`          | PC・モバイルサイズでPlaywrightを実行                                              |
+| `pnpm test:e2e`          | PC・スマホのブラウザで主要な機能の操作を検証                                      |
 | `pnpm test:rules`        | ホストのJavaでAuth・Firestore Emulatorを起動し、認証・権限テストを実行して終了    |
 | `pnpm test:rules:docker` | DockerのFirestoreと専用Auth Emulator（19091番）で認証・権限を検証                 |
+| `pnpm test:server`       | 配信サーバーのHTTP応答を検証                                                      |
+| `pnpm test:deploy`       | Secrets同期スクリプトをスタブで検証                                               |
 
 ブラウザテストの初回のみ実行する。
 
