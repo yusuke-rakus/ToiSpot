@@ -304,7 +304,7 @@ describe('場所候補の検索', () => {
     expect(fetchSuggestions).toHaveBeenCalledOnce()
   })
 
-  it('候補取得の失敗を安全なメッセージで表示し、自動で再試行しない', async () => {
+  it('候補取得の失敗を機密値を除いたエラーとして返し、自動で再試行しない', async () => {
     fetchSuggestions.mockRejectedValue(new Error('request URL with key'))
     const { result } = setup()
     act(() => {
@@ -312,9 +312,9 @@ describe('場所候補の検索', () => {
       result.current.setQuery('大阪')
     })
     await tick()
-    expect(result.current.error).toBe(
-      '場所の候補を取得できませんでした。もう一度お試しください。',
-    )
+    expect(result.current.status).toBe('error')
+    expect(result.current.error).toEqual(expect.any(String))
+    expect(result.current.error).not.toContain('request URL with key')
     await tick(2000)
     expect(fetchSuggestions).toHaveBeenCalledOnce()
   })

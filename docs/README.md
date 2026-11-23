@@ -24,7 +24,7 @@
 | 要件・操作フロー         | [要件と機能](requirements/README.md)                                                                                     |
 | 技術・状態管理・UI       | [技術構成](architecture/README.md)、[フロントエンド](architecture/frontend.md)、[地図画面](architecture/map.md)          |
 | データ・認証・検索       | [データモデル](architecture/data-model.md)、[アクセス制御](architecture/security.md)、[周辺検索](architecture/search.md) |
-| ローカル開発・実装・検証 | [開発環境](development/README.md)、[ロードマップ](development/implementation.md)、[受け入れ条件](development/testing.md) |
+| ローカル開発・実装・検証 | [開発環境](development/README.md)、[ロードマップ](development/implementation.md)、[テスト方針](development/testing.md)   |
 | 料金・公開・運用         | [運用ガイド](operations/README.md)、[料金と上限](operations/costs.md)、[公開と運用](operations/deployment.md)            |
 | 未決事項・履歴           | [決定管理](decisions/README.md)                                                                                          |
 

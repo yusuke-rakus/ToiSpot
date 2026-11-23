@@ -9,7 +9,7 @@
 1. [要件と初期版の機能](docs/requirements/README.md)で確定要件と提案を確認する。
 2. [未決事項と決定履歴](docs/decisions/README.md)で、担当機能の着手前に決める事項を確認する。
 3. [技術構成](docs/architecture/README.md)と[実装ロードマップ](docs/development/implementation.md)を読む。
-4. [開発手順](docs/development/README.md)に沿って起動し、専門資料を参照しながら実装する。
+4. [開発手順](docs/development/README.md)に沿って起動し、変更に対応する検証を[テスト方針](docs/development/testing.md)で確認する。
 
 詳細な仕様・調査・検証項目は[ドキュメント一覧](docs/README.md)から参照できる。既存の要件ID・未決事項ID・調査結果は分割後も保持している。
 

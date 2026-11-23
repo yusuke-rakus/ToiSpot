@@ -14,6 +14,6 @@
 | 8.3 公開準備と運用                 | [公開と運用](operations/deployment.md)                                         |
 | 9 未決事項・12 決定履歴            | [決定管理](decisions/README.md)                                                |
 | 10 実装の進め方                    | [ロードマップ](development/implementation.md)                                  |
-| 11 検証・受け入れ条件              | [受け入れ条件](development/testing.md)                                         |
+| 11 検証・受け入れ条件              | [テスト方針](development/testing.md)                                           |
 
 確定要件、未決事項ID、料金調査、公式資料リンク、決定履歴を移動先に保持している。

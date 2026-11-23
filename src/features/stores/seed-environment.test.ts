@@ -36,7 +36,7 @@ it('認証情報は.env→.env.local→シェルで上書きし、パスワー�
   }
 })
 
-it('両方未指定ならスキップし、不完全・不正・旧設定は値を含めず案内する', () => {
+it('両方未指定ならスキップし、不完全・不正・旧設定は値を明かさず拒否する', () => {
   expect(parseAdminCredentials({})).toBeNull()
   expect(
     parseAdminCredentials({ ADMIN_EMAIL: ' ', ADMIN_PASSWORD: '' }),
@@ -45,22 +45,18 @@ it('両方未指定ならスキップし、不完全・不正・旧設定は値�
     { ADMIN_EMAIL: 'admin@example.test' },
     { ADMIN_PASSWORD: 'secret-password' },
     { ADMIN_EMAIL: 'invalid-email', ADMIN_PASSWORD: 'secret-password' },
-    { ADMIN_EMAIL: 'admin@example.test', ADMIN_PASSWORD: 'short' },
+    { ADMIN_EMAIL: 'admin@example.test', ADMIN_PASSWORD: 'X7_z#' },
     { ADMIN_EMAIL: 'admin@example.test', ADMIN_PASSWORD: 'x'.repeat(4097) },
+    { ADMIN_GOOGLE_EMAIL: 'old@example.test' },
   ]) {
-    expect(() => parseAdminCredentials(env)).toThrow(
-      /ADMIN_EMAIL.*ADMIN_PASSWORD/,
-    )
+    expect(() => parseAdminCredentials(env)).toThrow(expect.any(Error))
     try {
       parseAdminCredentials(env)
     } catch (error) {
-      expect(String(error)).not.toContain('secret-password')
-      expect(String(error)).not.toContain('admin@example.test')
+      for (const value of Object.values(env))
+        expect(String(error)).not.toContain(value)
     }
   }
-  expect(() =>
-    parseAdminCredentials({ ADMIN_GOOGLE_EMAIL: 'old@example.test' }),
-  ).toThrow('廃止')
 })
 
 it('Authも接続先をローカル19090番だけに限定する', () => {

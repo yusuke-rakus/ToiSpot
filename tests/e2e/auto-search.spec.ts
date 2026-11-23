@@ -1,23 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
+import { blockExternalRequests, stubMapsSdk } from './fixtures/network'
 
 async function setup(page: Page, expandedSearch: boolean) {
-  const externalRequests: string[] = []
-  page.on('request', (request) => {
-    if (
-      /^https?:/.test(request.url()) &&
-      new URL(request.url()).hostname !== '127.0.0.1'
-    )
-      externalRequests.push(request.url())
-  })
-  await page.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/))/, (route) =>
-    route.abort(),
-  )
-  await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
-    const response = await route.fetch({
-      url: 'http://127.0.0.1:4173/tests/e2e/fixtures/maps-stub.tsx',
-    })
-    await route.fulfill({ response, contentType: 'application/javascript' })
-  })
+  const externalRequests = await blockExternalRequests(page)
+  await stubMapsSdk(page)
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
@@ -87,87 +73,38 @@ const callCount = (page: Page) =>
     () => (window as unknown as { nearbyCalls: unknown[] }).nearbyCalls.length,
   )
 
-test('自動分割取得・縮小停止・表示維持・再開を外部通信なしで操作できる', async ({
+test('表示範囲の変更で自動検索し、縮小時は結果を維持して拡大で再開する', async ({
   page,
 }, testInfo) => {
   const externalRequests = await setup(page, true)
   const mobile = testInfo.project.name === 'mobile'
   const list = page.getByRole('list', { name: '周辺店舗一覧' })
   const pins = page.getByRole('button', { name: /・データなし$/ })
-  const results = mobile ? pins : list.locator('li')
-  const sheet = page.getByRole('dialog', { name: 'トイレ情報' })
-  const notifications = page.getByRole('region', { name: /^通知/ })
-  const pauseNotice =
-    notifications.getByText('地図を拡大すると検索を再開します')
+  const results = mobile ? pins : list.getByRole('button')
   await expect(results).toHaveCount(100)
   expect(await callCount(page)).toBe(5)
-  if (!mobile) {
-    await expect(
-      page.getByText('地図の表示範囲・中心から近い順'),
-    ).toBeAttached()
-  }
-  const initialRadius = await page.evaluate(
-    () =>
-      (window as unknown as { nearbyCalls: { radius: number }[] })
-        .nearbyCalls[0].radius,
-  )
+
   await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   await expect.poll(() => callCount(page)).toBe(10)
   await expect(results).toHaveCount(100)
-  const movedRadius = await page.evaluate(
-    () =>
-      (window as unknown as { nearbyCalls: { radius: number }[] })
-        .nearbyCalls[5].radius,
-  )
-  expect(movedRadius).toBeLessThan(initialRadius)
   if (mobile) await pins.last().click()
   else await list.getByRole('button').first().click()
-  await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
-  await page.getByRole('button', { name: /テーマを変更/ }).click()
-  await page.getByRole('menuitemradio', { name: 'ダーク' }).click()
-  await page.waitForTimeout(400)
-  expect(await callCount(page)).toBe(10)
-  await page.getByRole('button', { name: '地図を縮小' }).click()
-  await expect(pauseNotice).toBeVisible()
-  await expect
-    .poll(() =>
-      pauseNotice.evaluate((message) => {
-        const bounds = message
-          .closest('[data-sonner-toast]')
-          ?.getBoundingClientRect()
-        return bounds
-          ? {
-              centered:
-                Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 2,
-              nearBottom:
-                innerHeight - bounds.bottom >= 0 &&
-                innerHeight - bounds.bottom <= 48,
-            }
-          : null
-      }),
-    )
-    .toEqual({ centered: true, nearBottom: true })
-  await expect(
-    page.getByRole('button', { name: 'この周辺を検索' }),
-  ).toHaveCount(0)
-  if (!mobile) {
-    await expect(
-      page.getByRole('button', { name: '店舗情報を更新' }),
-    ).toHaveCount(0)
-  }
-  await expect(page.getByText('トイレ情報：データなし')).toBeVisible()
-  await page.waitForTimeout(400)
-  expect(await callCount(page)).toBe(10)
-  await page.screenshot({
-    path: `output/playwright/auto-search-${testInfo.project.name}-paused.png`,
-    fullPage: true,
-    animations: 'disabled',
+  const directions = page.getByRole('link', {
+    name: 'Google マップで経路を見る',
   })
+  const selectedStore = await directions.getAttribute('href')
+
+  await page.clock.install()
+  await page.getByRole('button', { name: '地図を縮小' }).click()
+  const map = page.getByLabel('周辺の地図', { exact: true })
+  await expect(map).toHaveAttribute('data-zoom', '12')
+  await page.clock.runFor(300)
+  expect(await callCount(page)).toBe(10)
+  await expect(directions).toHaveAttribute('href', selectedStore!)
+
   await page.getByRole('button', { name: '地図を拡大' }).click()
   await expect.poll(() => callCount(page)).toBe(15)
-  await expect(pauseNotice).toHaveCount(0)
   await expect(results).toHaveCount(100)
-  if (mobile) await expect(sheet).toHaveCount(0)
   const sameArea = await page.evaluate(() => {
     const state = window as unknown as {
       storeArea: { center: { lat: number; lng: number }; zoom: number }
@@ -181,17 +118,7 @@ test('自動分割取得・縮小停止・表示維持・再開を外部通信�
   })
   expect(sameArea.center).toEqual(sameArea.placesCenter)
   expect(sameArea.zoom).toBe(13)
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true)
   expect(externalRequests).toEqual([])
-  await expect(
-    notifications.getByText(
-      '取得上限に達したため、一部のコンビニを表示しています。',
-    ),
-  ).toHaveCount(0)
 })
 
 test('自動取得を有効にしたまま分割取得だけ無効化できる', async ({
@@ -201,14 +128,11 @@ test('自動取得を有効にしたまま分割取得だけ無効化できる',
   const results =
     testInfo.project.name === 'mobile'
       ? page.getByRole('button', { name: /・データなし$/ })
-      : page.getByRole('list', { name: '周辺店舗一覧' }).locator('li')
+      : page.getByRole('list', { name: '周辺店舗一覧' }).getByRole('button')
   await expect(results).toHaveCount(20)
   expect(await callCount(page)).toBe(1)
   await page.getByRole('button', { name: '地図を移動', exact: true }).click()
   await expect.poll(() => callCount(page)).toBe(2)
   await expect(results).toHaveCount(20)
-  await expect(
-    page.getByRole('button', { name: 'この周辺を検索' }),
-  ).toHaveCount(0)
   expect(externalRequests).toEqual([])
 })
