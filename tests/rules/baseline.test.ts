@@ -938,6 +938,26 @@ describe('一般利用者の登録・編集申請と管理者の承認', () => {
     ).rejects.toBeInstanceOf(StoreConflictError)
   })
 
+  it('管理者以外の認証済み利用者も申請でき、同じIDの再送で既存の申請を上書きしない', async () => {
+    const db = manager('other-uid')
+    const request = target('signed-in')
+    const original = input()
+    await assertSucceeds(submitStoreRequestToDb(db, request, original))
+    const ref = admin.doc('storeRequests/signed-in')
+    const first = (await ref.get()).data()
+    expect(first).toMatchObject({ status: 'pending', input: original })
+
+    await assertFails(
+      submitStoreRequestToDb(db, request, {
+        ...original,
+        notes: '再送した備考',
+      }),
+    )
+    expect((await ref.get()).data()).toEqual(first)
+    expect(await readPendingStoreRequestCount(manager())).toBe(1)
+    expect((await admin.doc('stores/signed-in').get()).exists).toBe(false)
+  })
+
   it('不正な申請・入力・日時・最初からの承認状態をRulesで拒否する', async () => {
     const original = payload('invalid-request')
     const changes = [

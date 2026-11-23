@@ -83,6 +83,17 @@ it('件数は既存の共通キャッシュ設定によらず表示開始時に�
   expect(mock.count).toHaveBeenCalledTimes(2)
 })
 
+it('申請件数を取得できないときは失敗として扱い、0件に置き換えない', async () => {
+  const error = new Error('offline')
+  mock.count.mockRejectedValueOnce(error)
+  const { wrapper } = setup()
+  const { result } = renderHook(usePendingStoreRequestCount, { wrapper })
+  await waitFor(() => expect(result.current.isError).toBe(true))
+  expect(result.current.error).toBe(error)
+  expect(result.current.data).toBeUndefined()
+  expect(mock.count).toHaveBeenCalledOnce()
+})
+
 it('ログアウトで非公開キャッシュを消し、取得中だった応答も破棄する', async () => {
   let finish: ((value: number) => void) | undefined
   mock.count.mockImplementation(
@@ -186,4 +197,31 @@ it('審査成功で公開店舗を再取得可能にし、処理済み申請を�
   expect(client.getQueryState(storeRequestKeys.pending)?.isInvalidated).toBe(
     true,
   )
+})
+
+it('却下では申請のキャッシュを更新し、公開店舗のキャッシュを使い続ける', async () => {
+  const { client, wrapper } = setup()
+  const stores = ['stores', 'test', 'requests', 'area']
+  const links = ['placeLinks', 'test', 'requests', 'place']
+  const published = [{ id: 'published-store' }]
+  client.setQueryData(stores, published)
+  client.setQueryData(links, { 'place-id': published[0] })
+  client.setQueryData(storeRequestKeys.count, 1)
+  client.setQueryData(storeRequestKeys.pending, {
+    pages: [{ requests: [{ id: 'request-1' }], nextCursor: null }],
+    pageParams: [undefined],
+  })
+  const { result } = renderHook(useReviewStoreRequest, { wrapper })
+  await act(async () => {
+    await result.current.mutateAsync({ id: 'request-1', action: 'reject' })
+  })
+  expect(mock.reject).toHaveBeenCalledExactlyOnceWith('request-1')
+  expect(mock.approve).not.toHaveBeenCalled()
+  expect(client.getQueryData(storeRequestKeys.pending)).toMatchObject({
+    pages: [{ requests: [] }],
+  })
+  expect(client.getQueryState(storeRequestKeys.count)?.isInvalidated).toBe(true)
+  expect(client.getQueryData(stores)).toEqual(published)
+  expect(client.getQueryState(stores)?.isInvalidated).toBe(false)
+  expect(client.getQueryState(links)?.isInvalidated).toBe(false)
 })

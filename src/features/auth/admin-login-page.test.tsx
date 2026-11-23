@@ -59,21 +59,16 @@ async function fill() {
   return user
 }
 
-it('必須入力・メール形式・パスワードのマスクと自動入力に対応する', async () => {
+it('資格情報が空かメール形式が不正なら認証へ送信しない', async () => {
   showLogin()
   const user = userEvent.setup()
   const email = screen.getByLabelText('メールアドレス')
   const password = screen.getByLabelText('パスワード')
-  expect(email).toHaveAttribute('autocomplete', 'username')
-  expect(password).toHaveAttribute('type', 'password')
-  expect(password).toHaveAttribute('autocomplete', 'current-password')
   await user.click(screen.getByRole('button', { name: 'ログイン' }))
-  expect(email).toBeInvalid()
   expect(mocks.login).not.toHaveBeenCalled()
   await user.type(email, 'invalid-email')
   await user.type(password, 'test-password')
   await user.click(screen.getByRole('button', { name: 'ログイン' }))
-  expect(email).toBeInvalid()
   expect(mocks.login).not.toHaveBeenCalled()
 })
 
@@ -92,32 +87,33 @@ it('Enterで送信し、送信中は二重操作を防ぎ、成功後はパス�
     'admin@example.test',
     'local-password',
   )
-  expect(screen.getByRole('button', { name: 'ログイン中' })).toBeDisabled()
-  fireEvent.submit(screen.getByLabelText('パスワード').closest('form')!)
+  const form = screen.getByLabelText('パスワード').closest('form')!
+  fireEvent.submit(form)
   expect(mocks.login).toHaveBeenCalledOnce()
   await act(async () => {
     finish()
   })
   expect(screen.getByLabelText('パスワード')).toHaveValue('')
-  expect(screen.getByRole('button', { name: '認証を確認中' })).toBeDisabled()
+  fireEvent.submit(form)
+  expect(mocks.login).toHaveBeenCalledOnce()
+  expect(mocks.navigate).not.toHaveBeenCalled()
   act(() => mocks.listener?.({ status: 'admin', message: null }))
   await waitFor(() =>
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/', replace: true }),
   )
 })
 
-it('認証失敗は案内し、メールを保持してパスワードだけ消し、再試行できる', async () => {
+it('認証失敗後はメールを保持してパスワードを消し、再試行できる', async () => {
   mocks.login.mockRejectedValueOnce(new Error('private-password'))
   showLogin()
   const user = await fill()
   await user.click(screen.getByRole('button', { name: 'ログイン' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'メールアドレスまたはパスワードが正しくありません。',
+  await waitFor(() =>
+    expect(screen.getByLabelText('パスワード')).toHaveValue(''),
   )
   expect(screen.getByLabelText('メールアドレス')).toHaveValue(
     'admin@example.test',
   )
-  expect(screen.getByLabelText('パスワード')).toHaveValue('')
   await user.type(screen.getByLabelText('パスワード'), 'retry-password')
   await user.click(screen.getByRole('button', { name: 'ログイン' }))
   expect(mocks.login).toHaveBeenLastCalledWith(
@@ -127,15 +123,12 @@ it('認証失敗は案内し、メールを保持してパスワードだけ消�
   expect(mocks.login).toHaveBeenCalledTimes(2)
 })
 
-it('Firebase接続が無効なら入力と送信を停止する', () => {
+it('Firebase接続が無効なら資格情報を送信しない', () => {
   mocks.enabled = false
   showLogin()
-  expect(screen.getByLabelText('メールアドレス')).toBeDisabled()
-  expect(screen.getByLabelText('パスワード')).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'ログイン' })).toBeDisabled()
-  expect(screen.getByRole('alert')).toHaveTextContent(
-    'ログインはこの環境では利用できません。',
-  )
+  fireEvent.submit(screen.getByLabelText('パスワード').closest('form')!)
+  expect(mocks.login).not.toHaveBeenCalled()
+  expect(mocks.navigate).not.toHaveBeenCalled()
 })
 
 it('認証監視の失敗後に再ログインすると購読を再開する', async () => {

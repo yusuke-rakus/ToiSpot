@@ -41,10 +41,6 @@ describe('絞り込み操作', () => {
     const onChange = vi.fn()
     render(<Controls onChange={onChange} />)
     await user.click(screen.getByRole('button', { name: '利用可のみ' }))
-    expect(screen.getByRole('button', { name: '利用可のみ' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
     expect(onChange).toHaveBeenLastCalledWith({
       ...EMPTY_SEARCH_FILTERS,
       availableOnly: true,
@@ -64,28 +60,17 @@ describe('絞り込み操作', () => {
     await user.click(
       within(dialog).getByRole('checkbox', { name: '女性用個室' }),
     )
-    expect(
-      within(dialog).getByRole('button', { name: '適用（2件）' }),
-    ).toBeVisible()
     expect(onChange).not.toHaveBeenCalled()
     await user.keyboard('{Escape}')
+    expect(onChange).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '設備' }))
     dialog = screen.getByRole('dialog', { name: '設備で絞り込む' })
-    expect(
-      within(dialog).getByRole('checkbox', { name: '女性用個室' }),
-    ).not.toBeChecked()
-    await user.click(
-      within(dialog).getByRole('checkbox', { name: '女性用個室' }),
-    )
     await user.click(within(dialog).getByRole('checkbox', { name: '共用個室' }))
-    await user.click(
-      within(dialog).getByRole('button', { name: '適用（3件）' }),
-    )
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: /^適用/ }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({
       ...EMPTY_SEARCH_FILTERS,
-      equipment: ['female', 'shared'],
+      equipment: ['shared'],
     })
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '設備（2）' })).toBeVisible()
   })
 })

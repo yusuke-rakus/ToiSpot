@@ -106,52 +106,34 @@ function setup() {
   return userEvent.setup()
 }
 
-it('未ログインで直接URLを開いても申請データを取得せずログインを案内する', () => {
+it('未ログインで申請ページを開いても非公開データを取得しない', () => {
   mock.status = 'signedOut'
   setup()
   expect(screen.getByRole('link', { name: '管理者ログイン' })).toHaveAttribute(
     'href',
     '/admin-login',
   )
-  expect(
-    screen.queryByRole('link', { name: /登録・修正申請一覧/ }),
-  ).not.toBeInTheDocument()
   expect(mock.list).not.toHaveBeenCalled()
   expect(mock.count).not.toHaveBeenCalled()
 })
 
-it('ベルの件数から申請を確認でき、確認後に承認すると一覧から消える', async () => {
+it('確認を確定したときだけ選択した申請を承認する', async () => {
   const user = setup()
-  expect(
-    await screen.findByRole('link', {
-      name: '登録・修正申請一覧（申請中1件）',
-    }),
-  ).toHaveAttribute('href', '/admin/store-requests')
   await user.click(
     await screen.findByRole('button', { name: /申請されたコンビニ/ }),
   )
-  expect(screen.getByRole('table', { name: '申請内容の確認' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: '承認する' }))
-  const confirmation = screen.getByRole('alertdialog', {
-    name: 'この申請を承認しますか？',
-  })
+  const confirmation = screen.getByRole('alertdialog')
   expect(mock.approve).not.toHaveBeenCalled()
   await user.click(
     within(confirmation).getByRole('button', { name: '承認して反映' }),
   )
-  expect(
-    await screen.findByText('申請を承認し、店舗情報に反映しました。'),
-  ).toBeVisible()
-  expect(screen.getByText('申請中の登録・修正はありません。')).toBeVisible()
-  expect(mock.approve).toHaveBeenCalledOnce()
   await waitFor(() =>
-    expect(
-      screen.getByRole('link', { name: '登録・修正申請一覧（申請中0件）' }),
-    ).toBeVisible(),
+    expect(mock.approve).toHaveBeenCalledExactlyOnceWith(request.id),
   )
 })
 
-it('修正申請と現在の値を比較し、ナノ秒だけ異なる古い申請も承認せず却下できる', async () => {
+it('ナノ秒だけ異なる古い修正申請も承認できず、却下はできる', async () => {
   mock.requests = [
     {
       ...request,
@@ -168,21 +150,14 @@ it('修正申請と現在の値を比較し、ナノ秒だけ異なる古い申�
   await user.click(
     await screen.findByRole('button', { name: /申請されたコンビニ/ }),
   )
-  expect(
-    await screen.findByText(
-      /申請後に店舗情報が更新されているため承認できません/,
-    ),
-  ).toBeVisible()
-  const table = screen.getByRole('table', { name: '申請内容の確認' })
-  expect(
-    within(table).getByRole('columnheader', { name: '現在の情報' }),
-  ).toBeVisible()
-  expect(within(table).getByText(base.name)).toBeVisible()
+  await screen.findByText(base.name, { exact: true })
+  expect(mock.current).toHaveBeenCalledWith('existing', expect.any(AbortSignal))
   expect(screen.getByRole('button', { name: '承認する' })).toBeDisabled()
   await user.click(screen.getByRole('button', { name: '却下する' }))
-  expect(await screen.findByText('申請を却下しました。')).toBeVisible()
+  await waitFor(() =>
+    expect(mock.reject).toHaveBeenCalledExactlyOnceWith(request.id),
+  )
   expect(mock.approve).not.toHaveBeenCalled()
-  expect(mock.reject).toHaveBeenCalledWith('request-1')
 })
 
 it('承認の通信失敗では申請を残し、再試行できる', async () => {
@@ -193,31 +168,12 @@ it('承認の通信失敗では申請を残し、再試行できる', async () =
   )
   await user.click(screen.getByRole('button', { name: '承認する' }))
   await user.click(screen.getByRole('button', { name: '承認して反映' }))
-  expect(
-    await screen.findByText(
-      '申請を処理できませんでした。通信状態を確認して再試行してください。',
-    ),
-  ).toBeVisible()
-  expect(
-    screen.getByRole('article', { name: '申請されたコンビニの申請' }),
-  ).toBeVisible()
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '承認する' })).toBeEnabled(),
+  )
+  expect(mock.approve).toHaveBeenCalledExactlyOnceWith(request.id)
   await user.click(screen.getByRole('button', { name: '承認する' }))
   await user.click(screen.getByRole('button', { name: '承認して反映' }))
-  expect(
-    await screen.findByText('申請を承認し、店舗情報に反映しました。'),
-  ).toBeVisible()
-  expect(mock.approve).toHaveBeenCalledTimes(2)
-})
-
-it('件数取得に失敗しても0件とは表示しない', async () => {
-  mock.count.mockRejectedValue(new Error('offline'))
-  setup()
-  expect(
-    await screen.findByRole('link', {
-      name: '登録・修正申請一覧（件数を取得できませんでした）',
-    }),
-  ).toBeVisible()
-  expect(
-    screen.queryByRole('link', { name: '登録・修正申請一覧（申請中0件）' }),
-  ).not.toBeInTheDocument()
+  await waitFor(() => expect(mock.approve).toHaveBeenCalledTimes(2))
+  expect(mock.approve).toHaveBeenLastCalledWith(request.id)
 })

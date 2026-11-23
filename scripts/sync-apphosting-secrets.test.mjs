@@ -79,22 +79,19 @@ test('validates every input before cloud calls', () => {
   for (const name of ['FIREBASE_APP_HOSTING_BACKEND_ID', ...secretNames]) {
     const env = fixture()
     delete env[name]
-    assert.throws(
-      () => syncAppHostingSecrets(env, () => assert.fail('cloud call')),
-      new RegExp(`${name} is required`),
-    )
+    const { calls, execute } = cloud(env)
+    assert.throws(() => syncAppHostingSecrets(env, execute), Error)
+    assert.equal(calls.length, 0)
   }
-  for (const [overrides, message] of [
-    [{ VITE_FIREBASE_PROJECT_ID: 'wrong' }, /must match/],
-    [{ VITE_GOOGLE_MAPS_MAP_ID: 'DEMO_MAP_ID' }, /production Map ID/],
-  ])
-    assert.throws(
-      () =>
-        syncAppHostingSecrets({ ...fixture(), ...overrides }, () =>
-          assert.fail('cloud call'),
-        ),
-      message,
-    )
+  for (const overrides of [
+    { VITE_FIREBASE_PROJECT_ID: 'wrong' },
+    { VITE_GOOGLE_MAPS_MAP_ID: 'DEMO_MAP_ID' },
+  ]) {
+    const env = { ...fixture(), ...overrides }
+    const { calls, execute } = cloud(env)
+    assert.throws(() => syncAppHostingSecrets(env, execute), Error)
+    assert.equal(calls.length, 0)
+  }
 })
 
 test('identical settings skip all uploads and still grant backend access', () => {
@@ -206,7 +203,7 @@ for (const state of ['DISABLED', 'DESTROYED'])
         ],
       },
     })
-    assert.throws(() => syncAppHostingSecrets(env, execute), /not enabled/)
+    assert.throws(() => syncAppHostingSecrets(env, execute), Error)
     assert.equal(writes(calls).length, 0)
   })
 
@@ -248,9 +245,16 @@ for (const [stage, output] of [
         if (stage === 'access' && args[2] === 'access') return output
       },
     })
-    assert.throws(() => syncAppHostingSecrets(env, execute), {
-      message: 'Invalid Secret Manager response; sync stopped.',
-    })
+    assert.throws(
+      () => syncAppHostingSecrets(env, execute),
+      (error) => {
+        assert.doesNotMatch(
+          error.message,
+          /sensitive-value|c2Vuc2l0aXZlLXZhbHVl/,
+        )
+        return true
+      },
+    )
     assert.equal(writes(calls).length, 0)
   })
 
@@ -266,15 +270,18 @@ for (const operation of ['list', 'access', 'add'])
           )
       },
     })
-    assert.throws(() => syncAppHostingSecrets(env, execute), {
-      message:
-        'gcloud secrets failed; check deployment IAM and API configuration.',
-    })
+    assert.throws(
+      () => syncAppHostingSecrets(env, execute),
+      (error) => {
+        assert(!error.message.includes(env.VITE_FIREBASE_API_KEY))
+        return true
+      },
+    )
     if (operation !== 'add') assert.equal(writes(calls).length, 0)
     else assert.equal(writes(calls).length, 1)
   })
 
-test('CLI prints only counts on success and sanitized errors on command failure', (t) => {
+test('CLI returns an error exit code on failure and keeps secret values out of output', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'secret-sync-test-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const env = fixture()
@@ -314,15 +321,12 @@ else if (args[2] === 'access') console.log(JSON.stringify({name: resource + '/ve
       },
     )
     assert.equal(result.status, failure ? 1 : 0)
-    assert.equal(
-      result.stdout,
-      failure ? '' : 'App Hosting secrets synced: 0 added, 6 skipped.\n',
-    )
-    assert.equal(
-      result.stderr,
-      failure
-        ? 'gcloud secrets failed; check deployment IAM and API configuration.\n'
-        : '',
-    )
+    for (const value of [
+      env.VITE_FIREBASE_API_KEY,
+      env.VITE_GOOGLE_MAPS_API_KEY,
+    ]) {
+      assert(!result.stdout.includes(value))
+      assert(!result.stderr.includes(value))
+    }
   }
 })

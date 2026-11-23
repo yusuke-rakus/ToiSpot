@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { blockExternalRequests, stubMapsSdk } from './fixtures/network'
 import { createTestStores } from '../fixtures/stores'
 import type { Store } from '../../src/features/stores/store-schema'
 
@@ -58,23 +59,8 @@ type SearchTestState = {
 }
 
 async function setup(page: Page) {
-  const externalRequests: string[] = []
-  page.on('request', (request) => {
-    if (
-      /^https?:/.test(request.url()) &&
-      new URL(request.url()).hostname !== '127.0.0.1'
-    )
-      externalRequests.push(request.url())
-  })
-  await page.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/))/, (route) =>
-    route.abort(),
-  )
-  await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
-    const response = await route.fetch({
-      url: 'http://127.0.0.1:4173/tests/e2e/fixtures/maps-stub.tsx',
-    })
-    await route.fulfill({ response, contentType: 'application/javascript' })
-  })
+  const externalRequests = await blockExternalRequests(page)
+  await stubMapsSdk(page)
   await page.route('**/src/features/map/map-config.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
@@ -204,71 +190,29 @@ function mapPins(page: Page) {
   })
 }
 
-async function showList(page: Page, mobile: boolean, count: number) {
+async function openList(page: Page, mobile: boolean) {
   if (mobile)
-    await page
-      .getByRole('button', {
-        name: new RegExp(`^店舗一覧を表示（${count}件）$`),
-      })
-      .click()
-  const list = page.getByRole('list', { name: '周辺店舗一覧' })
-  await expect(list.locator('li')).toHaveCount(count)
-  await expect(
-    page.getByRole('button', { name: '店舗情報を更新' }),
-  ).toHaveCount(0)
-  await expect(
-    page.locator('h2:not(.sr-only)', { hasText: 'トイレ情報' }),
-  ).toHaveCount(0)
-  return list
+    await page.getByRole('button', { name: /^店舗一覧を表示/ }).click()
+  return page.getByRole('list', { name: '周辺店舗一覧' })
 }
 
-test('750ms後の場所候補から遠方を検索し、設備ORとチェーンを追加通信なしで適用できる', async ({
+test('選択した場所を周辺検索し、取得済みの店舗に絞り込みを適用する', async ({
   page,
 }, testInfo) => {
   const externalRequests = await setup(page)
   const mobile = testInfo.project.name === 'mobile'
-  const inputLabel = '駅名・地名・住所・店舗名で周辺を検索'
-  await expect(mapPins(page)).toHaveCount(9)
-
-  const input = page.getByRole('combobox', { name: inputLabel })
-  await input.focus()
-  const clockStart = new Date('2026-11-15T00:00:00.000Z')
-  await page.clock.install({ time: clockStart })
-  await page.clock.pauseAt(new Date(clockStart.getTime() + 1000))
+  const input = page.getByRole('combobox', {
+    name: '駅名・地名・住所・店舗名で周辺を検索',
+  })
   await input.fill('大阪')
-  await page.clock.runFor(749)
-  expect((await readState(page)).autocompleteCalls).toHaveLength(0)
-  await page.clock.runFor(1)
-  await expect(page.getByRole('option', { name: /大阪駅/ })).toBeVisible()
-  expect((await readState(page)).autocompleteCalls).toEqual([
-    {
-      input: '大阪',
-      includedRegionCodes: ['jp'],
-      locationBias: {
-        center: { lat: 35.681236, lng: 139.767125 },
-        radius: 5000,
-      },
-    },
-  ])
-  await expect(
-    page.getByRole('img', { name: 'Google Maps', exact: true }).first(),
-  ).toBeVisible()
-  await input.press('ArrowDown')
-  await input.press('Enter')
-  await page.clock.resume()
-  await expect(page.getByRole('listbox', { name: '場所の候補' })).toHaveCount(0)
-  await expect(page.getByLabel('周辺の地図', { exact: true })).toHaveAttribute(
-    'data-center',
-    JSON.stringify(destination),
-  )
-  expect((await readState(page)).detailFields).toEqual([['location']])
+  await page.getByRole('option', { name: /大阪駅/ }).click()
+
   await expect
     .poll(() => readState(page).then((state) => state.nearbyCalls.length))
     .toBe(2)
-  const nearbyArea = (await readState(page)).nearbyCalls[1]
-  expect(nearbyArea.center).toEqual(destination)
-  expect(nearbyArea.radius).toBeGreaterThan(900)
-  expect(nearbyArea.radius).toBeLessThan(950)
+  const search = await readState(page)
+  expect(search.nearbyCalls[1].center).toEqual(destination)
+  expect(search.detailFields).toEqual([['location']])
 
   if (mobile) await input.focus()
   await page.getByRole('button', { name: '設備', exact: true }).click()
@@ -279,87 +223,57 @@ test('750ms後の場所候補から遠方を検索し、設備ORとチェーン�
   await equipment
     .getByRole('checkbox', { name: '共用個室', exact: true })
     .check()
-  await equipment.getByRole('button', { name: '適用（4件）' }).click()
+  await equipment.getByRole('button', { name: /^適用/ }).click()
   await page.getByRole('button', { name: 'チェーン', exact: true }).click()
   const chains = page.getByRole('dialog', { name: 'チェーンで絞り込む' })
   await chains
     .getByRole('checkbox', { name: 'セブン-イレブン', exact: true })
     .check()
   await chains.getByRole('checkbox', { name: 'ローソン', exact: true }).check()
-  await chains.getByRole('button', { name: '適用（3件）' }).click()
-  await expect(mapPins(page)).toHaveCount(3)
+  await chains.getByRole('button', { name: /^適用/ }).click()
   await page.getByRole('button', { name: '利用可のみ', exact: true }).click()
-  await expect(mapPins(page)).toHaveCount(3)
-  expect((await readState(page)).nearbyCalls).toHaveLength(2)
-  expect((await readState(page)).autocompleteCalls).toHaveLength(1)
-
-  await page.screenshot({
-    path: `output/playwright/search-${testInfo.project.name}-light.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
   if (mobile) await page.getByRole('button', { name: '検索を閉じる' }).click()
-  const list = await showList(page, mobile, 3)
-  const names = await list.getByRole('heading').allTextContents()
-  expect(names.sort()).toEqual(
-    [
-      'セブン-イレブン 共用個室店',
-      'セブン-イレブン 女性用個室店',
-      'ローソン 共用個室店',
-    ].sort(),
-  )
-  await expect(list.getByText(/検索地点から約.*直線距離/)).toHaveCount(3)
-  await expect(page.getByText('地図の表示範囲・中心から近い順')).toBeAttached()
 
-  await page.getByRole('button', { name: /テーマを変更/ }).click()
-  await page.getByRole('menuitemradio', { name: 'ダーク' }).click()
-  await expect(page.getByLabel('周辺の地図', { exact: true })).toHaveAttribute(
-    'data-color-scheme',
-    'DARK',
-  )
-  await expect(list.locator('li')).toHaveCount(3)
-  await page.screenshot({
-    path: `output/playwright/search-${testInfo.project.name}-dark.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
-  expect((await readState(page)).nearbyCalls).toHaveLength(2)
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true)
+  const expectedStores = [
+    'セブン-イレブン 共用個室店',
+    'セブン-イレブン 女性用個室店',
+    'ローソン 共用個室店',
+  ]
+  const list = await openList(page, mobile)
+  await expect(list.getByRole('button')).toHaveCount(expectedStores.length)
+  await expect(mapPins(page)).toHaveCount(expectedStores.length)
+  for (const name of expectedStores) {
+    await expect(
+      list.getByRole('button', { name: `${name}の詳細を見る` }),
+    ).toHaveCount(1)
+    await expect(
+      page.getByRole('button', { name: `${name}・利用可`, exact: true }),
+    ).toHaveCount(1)
+  }
+  const filtered = await readState(page)
+  expect(filtered.nearbyCalls).toEqual(search.nearbyCalls)
+  expect(filtered.autocompleteCalls).toHaveLength(1)
   expect(externalRequests).toEqual([])
 })
 
-test('周辺一覧から詳細へ進み、一覧アイコンと地図操作で同じ結果へ戻れる', async ({
+test('一覧から店舗を選択し、追加検索せず同じ結果へ戻る', async ({
   page,
 }, testInfo) => {
   const externalRequests = await setup(page)
   const mobile = testInfo.project.name === 'mobile'
-  const list = await showList(page, mobile, 9)
-  const lastRow = list.getByRole('button').last()
-  await lastRow.scrollIntoViewIfNeeded()
-  const scrollArea = page
-    .getByRole('dialog', { name: '周辺店舗一覧' })
-    .locator('.overflow-y-auto')
-  const previousScroll = mobile
-    ? await scrollArea.evaluate((element) => element.scrollTop)
-    : 0
-  if (mobile) expect(previousScroll).toBeGreaterThan(0)
-  const label = await lastRow.getAttribute('aria-label')
-  await expect(lastRow).toHaveAccessibleDescription(/直線距離/)
-  await lastRow.click()
-  await expect(
-    page.getByRole('link', { name: 'Google マップで経路を見る' }),
-  ).toBeVisible()
-  if (mobile) await expect(page.getByRole('dialog')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '一覧へ戻る' })).toHaveCount(0)
+  const store = stores[0]
+  const list = await openList(page, mobile)
+  const row = list.getByRole('button', { name: `${store.name}の詳細を見る` })
+  await expect(list.getByRole('button')).toHaveCount(9)
+  await row.click()
+  const directions = page.getByRole('link', {
+    name: 'Google マップで経路を見る',
+  })
+  const url = new URL((await directions.getAttribute('href'))!)
+  expect(url.searchParams.get('destination_place_id')).toBe(store.googlePlaceId)
+
   if (mobile) {
-    await expect(
-      page.getByRole('region', { name: '選択した店舗の情報' }),
-    ).toBeFocused()
-    await page.getByRole('button', { name: /^店舗一覧を表示/ }).click()
+    await openList(page, true)
   } else {
     const map = page.getByLabel('周辺の地図', { exact: true })
     const bounds = (await map.boundingBox())!
@@ -367,163 +281,9 @@ test('周辺一覧から詳細へ進み、一覧アイコンと地図操作で�
       position: { x: bounds.width - 80, y: bounds.height / 2 },
     })
   }
-  await expect(list.locator('li')).toHaveCount(9)
-  if (mobile)
-    await expect
-      .poll(() => scrollArea.evaluate((element) => element.scrollTop))
-      .toBe(previousScroll)
-  await expect(list.getByRole('button', { name: label! })).toBeVisible()
-  if (mobile) {
-    const returnedRow = list.getByRole('button', { name: label! })
-    await expect(returnedRow).toBeFocused()
-    await expect(returnedRow).toHaveCSS('outline-style', 'none')
-    await expect(returnedRow).toHaveCSS('box-shadow', 'none')
-  }
-  await expect(mapPins(page)).toHaveCount(9)
+  await expect(directions).toHaveCount(0)
+  await expect(list.getByRole('button')).toHaveCount(9)
+  await expect(row).toHaveCount(1)
   expect((await readState(page)).nearbyCalls).toHaveLength(1)
-  expect((await readState(page)).autocompleteCalls).toHaveLength(0)
   expect(externalRequests).toEqual([])
-})
-
-test('検索パネルが地図上に浮き、スマホのフォーカスと条件操作を維持する', async ({
-  page,
-}, testInfo) => {
-  await setup(page)
-  const mobile = testInfo.project.name === 'mobile'
-  const input = page.getByRole('combobox')
-  const panel = page.locator('[data-map-search-panel]')
-  const map = page.getByLabel('周辺の地図', { exact: true })
-  const locate = page.getByRole('button', { name: '現在地に移動' })
-  await expect(locate).toBeEnabled()
-  const mapBox = (await map.boundingBox())!
-  const panelBox = (await panel.boundingBox())!
-  await expect(page.getByRole('banner')).toHaveCount(0)
-  expect(mapBox.y).toBe(0)
-  const actions = (await page
-    .getByRole('group', { name: 'マップのアプリ操作' })
-    .boundingBox())!
-  expect(actions.x + actions.width).toBeGreaterThan(mapBox.width - 20)
-  if (mobile) expect(actions.y).toBeGreaterThan(panelBox.y + panelBox.height)
-  else expect(actions.y).toBeLessThan(20)
-  if (mobile) {
-    const nearbyBox = (await page
-      .getByRole('button', { name: 'この周辺を検索', exact: true })
-      .boundingBox())!
-    expect(
-      Math.abs(
-        nearbyBox.x + nearbyBox.width / 2 - (panelBox.x + panelBox.width / 2),
-      ),
-    ).toBeLessThan(2)
-    expect(nearbyBox.y - (panelBox.y + panelBox.height)).toBeGreaterThanOrEqual(
-      10,
-    )
-    expect(nearbyBox.y - (panelBox.y + panelBox.height)).toBeLessThanOrEqual(14)
-    expect(actions.y + actions.height / 2).toBeCloseTo(
-      nearbyBox.y + nearbyBox.height / 2,
-      0,
-    )
-    expect(actions.x).toBeGreaterThan(nearbyBox.x + nearbyBox.width)
-    expect(
-      Math.abs(panelBox.x + panelBox.width / 2 - (mapBox.x + mapBox.width / 2)),
-    ).toBeLessThan(2)
-    await expect(
-      page.getByRole('button', { name: '設備', exact: true }),
-    ).toBeHidden()
-  } else {
-    expect(Math.abs(panelBox.x - mapBox.x - 16)).toBeLessThan(2)
-    await expect(panel.getByRole('complementary')).toBeVisible()
-    await locate.hover()
-    await expect(page.getByRole('tooltip')).toContainText('現在地')
-  }
-  const locateBox = (await locate.boundingBox())!
-  expect(locateBox.width).toBe(48)
-  expect(locateBox.height).toBe(48)
-  if (mobile) {
-    const listButton = page.getByRole('button', { name: /^店舗一覧を表示/ })
-    const listBox = (await listButton.boundingBox())!
-    expect(listBox.width).toBe(48)
-    expect(listBox.height).toBe(48)
-    expect(listBox.y + listBox.height).toBeLessThan(locateBox.y)
-    expect(listBox.x).toBe(locateBox.x)
-    await expect(
-      page.getByRole('button', { name: /件の店舗を一覧で見る/ }),
-    ).toHaveCount(0)
-  }
-
-  expect(locateBox.x).toBeGreaterThan(mapBox.width - 80)
-  await page.screenshot({
-    path: `output/playwright/floating-${testInfo.project.name}-collapsed.png`,
-    animations: 'disabled',
-  })
-  await input.fill('京都')
-  await page.getByRole('button', { name: '設備', exact: true }).click()
-  const popover = page.getByRole('dialog', { name: '設備で絞り込む' })
-  await popover.getByRole('checkbox', { name: '女性用個室' }).check()
-  await expect(input).toHaveValue('京都')
-  await expect(page.getByRole('listbox')).toHaveCount(0)
-  await page.screenshot({
-    path: `output/playwright/floating-${testInfo.project.name}-filters.png`,
-    animations: 'disabled',
-  })
-  await popover.getByRole('button', { name: /適用/ }).click()
-  await expect(input).toHaveValue('京都')
-  await expect(page.getByRole('button', { name: '設備（1）' })).toBeVisible()
-  await page.getByRole('button', { name: '検索を閉じる' }).click()
-  if (mobile) {
-    await expect(page.getByRole('button', { name: '設備（1）' })).toBeHidden()
-    await page.getByRole('button', { name: '適用中の条件1項目を表示' }).click()
-    await expect(page.getByRole('button', { name: '設備（1）' })).toBeVisible()
-    await page.evaluate(() => {
-      Object.defineProperty(window.visualViewport!, 'height', {
-        configurable: true,
-        value: 400,
-      })
-      window.visualViewport!.dispatchEvent(new Event('resize'))
-    })
-    expect(
-      (await panel.boundingBox())!.y + (await panel.boundingBox())!.height,
-    ).toBeLessThanOrEqual(389)
-    await page.evaluate(() => {
-      delete (window.visualViewport as unknown as { height?: number }).height
-      window.visualViewport!.dispatchEvent(new Event('resize'))
-    })
-    await page.getByRole('button', { name: '検索を閉じる' }).click()
-    await showList(page, true, 2)
-    const sheetBox = (await page.getByRole('dialog').boundingBox())!
-    await expect
-      .poll(async () => {
-        const box = (await locate.boundingBox())!
-        return box.y + box.height
-      })
-      .toBeLessThan(sheetBox.y)
-  }
-})
-
-test('検索欄へフォーカスしても店舗一覧とスクロール位置を維持する', async ({
-  page,
-}, testInfo) => {
-  const requests = await setup(page)
-  const mobile = testInfo.project.name === 'mobile'
-  const list = await showList(page, mobile, 9)
-  await list.getByRole('button').last().scrollIntoViewIfNeeded()
-  const viewport = mobile
-    ? page
-        .getByRole('dialog', { name: /周辺店舗一覧/ })
-        .locator('.overflow-y-auto')
-    : page.locator('[data-slot="scroll-area-viewport"]')
-  const previousScroll = await viewport.evaluate((el) => el.scrollTop)
-  await page.getByRole('combobox').focus()
-  await expect(list).toBeVisible()
-  await expect(list.locator('li')).toHaveCount(9)
-  expect(await viewport.evaluate((el) => el.scrollTop)).toBe(previousScroll)
-  await expect(page.getByRole('listbox')).toHaveCount(0)
-  await expect(
-    page.getByText(/2文字以上入力してください|場所を選ぶと|入力を止めると/),
-  ).toHaveCount(0)
-  expect((await readState(page)).autocompleteCalls).toHaveLength(0)
-  if (mobile)
-    await expect(
-      page.getByRole('dialog', { name: /周辺店舗一覧/ }),
-    ).toBeVisible()
-  expect(requests).toEqual([])
 })

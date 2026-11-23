@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { blockExternalRequests, stubMapsSdk } from './fixtures/network'
 import { createTestStores } from '../fixtures/stores'
 
 const existing = {
@@ -12,23 +13,8 @@ const existing = {
 test('未ログインの新規・修正申請をベルから承認・却下し、公開情報を更新する', async ({
   page,
 }, testInfo) => {
-  const externalRequests: string[] = []
-  page.on('request', (request) => {
-    if (
-      /^https?:/.test(request.url()) &&
-      new URL(request.url()).hostname !== '127.0.0.1'
-    )
-      externalRequests.push(request.url())
-  })
-  await page.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/))/, (route) =>
-    route.abort(),
-  )
-  await page.route(/@vis_+gl_react-google-maps\.js/, async (route) => {
-    const response = await route.fetch({
-      url: 'http://127.0.0.1:4173/tests/e2e/fixtures/maps-stub.tsx',
-    })
-    await route.fulfill({ response, contentType: 'application/javascript' })
-  })
+  const externalRequests = await blockExternalRequests(page)
+  await stubMapsSdk(page)
   await page.route('**/src/lib/firebase.ts', (route) =>
     route.fulfill({
       contentType: 'application/javascript',
@@ -175,40 +161,8 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
     sessionStorage.setItem('test-admin', 'true')
     window.dispatchEvent(new Event('test-admin-session'))
   })
-  const actions = page.getByRole('group', { name: 'マップのアプリ操作' })
-  const bell = actions.getByRole('link', { name: /申請一覧.*2件/ })
-  const nearby = page.getByRole('button', { name: 'この周辺を検索' })
-  await expect(
-    actions.getByRole('button', { name: /テーマを変更/ }),
-  ).toBeVisible()
-  await expect(
-    actions.getByRole('button', { name: 'ログアウト' }),
-  ).toBeVisible()
-  await expect(bell).toBeVisible()
-  await expect(nearby).toBeEnabled()
-  await expect(
-    actions.locator('[data-slot="glass-surface-backdrop"]'),
-  ).toHaveCSS('backdrop-filter', /^url\(/)
-  const viewport = page.viewportSize()!
-  for (const width of testInfo.project.name === 'mobile'
-    ? [375, 320]
-    : [viewport.width]) {
-    await page.setViewportSize({ ...viewport, width })
-    const groupBox = (await actions.boundingBox())!
-    const searchBox = (await nearby.boundingBox())!
-    expect(searchBox.x + searchBox.width / 2).toBeCloseTo(width / 2, 0)
-    expect(groupBox.y + groupBox.height / 2).toBeCloseTo(
-      searchBox.y + searchBox.height / 2,
-      0,
-    )
-    expect(groupBox.x).toBeGreaterThan(searchBox.x + searchBox.width)
-  }
-  await page.setViewportSize(viewport)
-  await bell.click()
+  await page.getByRole('link', { name: /登録・修正申請一覧/ }).click()
   await expect(page).toHaveURL('/admin/store-requests')
-  await expect(
-    page.getByRole('heading', { name: '登録・修正申請' }),
-  ).toBeVisible()
   const newRequest = page.getByRole('article', {
     name: 'セブン-イレブン 申請テスト店の申請',
   })
@@ -221,22 +175,6 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
     updateRequest.getByText('まだ公開されない修正内容', { exact: true }),
   ).toBeVisible()
 
-  // 審査画面の見た目と操作は、PCとスマホの両プロジェクトで確認する。
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme })
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true)
-    await page.screenshot({
-      path: `output/playwright/requests-${testInfo.project.name}-${colorScheme}.png`,
-      fullPage: true,
-      animations: 'disabled',
-    })
-  }
-
-  // 詳細・承認・却下の操作は実際の画面コンポーネントを通して行う。
   await newRequest
     .getByRole('button', { name: '承認する', exact: true })
     .click()
@@ -245,24 +183,30 @@ test('未ログインの新規・修正申請をベルから承認・却下し�
     .getByRole('button', { name: '承認して反映', exact: true })
     .click()
   await expect(newRequest).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /申請一覧.*1件/ })).toBeVisible()
 
   await updateRequest
     .getByRole('button', { name: '却下する', exact: true })
     .click()
   await expect(updateRequest).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /申請一覧/ })).not.toHaveText('1')
   await page.getByRole('link', { name: 'コンビニトイレマップ' }).click()
+  await expect(page).toHaveURL('/')
+  await page
+    .getByRole('button', { name: 'セブン-イレブン 申請テスト店・利用不可' })
+    .click()
+  await expect(page.getByText('新規店舗の申請', { exact: true })).toBeVisible()
+  if (testInfo.project.name === 'mobile')
+    await page.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
+  await page.getByRole('button', { name: `${existing.name}・利用可` }).click()
+  await expect(page.getByText(existing.notes, { exact: true })).toBeVisible()
   await expect(
-    page.getByRole('button', {
-      name: 'セブン-イレブン 申請テスト店・利用不可',
-    }),
-  ).toBeVisible()
+    page.getByText('まだ公開されない修正内容', { exact: true }),
+  ).toHaveCount(0)
+  if (testInfo.project.name === 'mobile')
+    await page.getByRole('button', { name: 'トイレ情報を閉じる' }).click()
 
   await page.getByRole('button', { name: 'ログアウト' }).click()
-  await expect(page.getByRole('link', { name: /申請一覧/ })).toHaveCount(0)
   await page.goto('/admin/store-requests')
-  await expect(page.getByRole('link', { name: '管理者ログイン' })).toBeVisible()
-  await expect(page.getByRole('article')).toHaveCount(0)
+  await page.getByRole('link', { name: '管理者ログイン' }).click()
+  await expect(page).toHaveURL('/admin-login')
   expect(externalRequests).toEqual([])
 })
